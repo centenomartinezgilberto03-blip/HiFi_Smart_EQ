@@ -26,7 +26,7 @@ object DynamicsProcessingEngine {
             runCatching { globalEq = Equalizer(0, 0).apply { enabled = true } }
         }
         if (globalLoudness == null) {
-            runCatching { globalLoudness = LoudnessEnhancer(0).apply { enabled = false } }
+            runCatching { globalLoudness = LoudnessEnhancer(0).apply { enabled = true } }
         }
         if (globalVirtualizer == null) {
             runCatching { globalVirtualizer = Virtualizer(0, 0).apply { enabled = false } }
@@ -124,6 +124,16 @@ object DynamicsProcessingEngine {
     ) {
         ensureGlobalEffects()
 
+        // Preamplificador usando LoudnessEnhancer
+        runCatching {
+            globalLoudness?.enabled = enabled
+            if (enabled && globalLoudness != null) {
+                val gainmB = (preampDb * 100).toInt().coerceIn(0, 2000)
+                globalLoudness?.setTargetGain(gainmB)
+            }
+        }
+
+        // Ecualizador
         runCatching {
             globalEq?.enabled = enabled
             if (enabled && globalEq != null) {
@@ -131,11 +141,12 @@ object DynamicsProcessingEngine {
                 for (i in 0 until numBands) {
                     val gain = bandGainsDb.getOrElse(i) { 0f }
                     val levelmB = (gain * 100).toInt().coerceIn(-1500, 1500)
-                    globalEq!!.setBandLevel(i.toShort(), levelmB.toShort())
+                    globalEq?.setBandLevel(i.toShort(), levelmB.toShort())
                 }
             }
         }
 
+        // Virtualizer
         runCatching {
             globalVirtualizer?.enabled = spatialAudioEnabled && enabled
             if (spatialAudioEnabled && enabled && globalVirtualizer?.strengthSupported == true) {
@@ -143,6 +154,12 @@ object DynamicsProcessingEngine {
             }
         }
 
+        // Bass Boost
+        runCatching {
+            globalBassBoost?.enabled = enabled
+        }
+
+        // Sesiones individuales
         if (Build.VERSION.SDK_INT >= 28) {
             for ((_, dp) in activeEngines) {
                 runCatching {
@@ -151,7 +168,7 @@ object DynamicsProcessingEngine {
                         val eq = DynamicsProcessing.Eq(true, true, bandCenterFreqsHz.size)
                         for (i in bandCenterFreqsHz.indices) {
                             val eqBand = DynamicsProcessing.EqBand(
-                                true, bandCenterFreqsHz[i], bandGainsDb.getOrElse(i) { 0f }
+                                true, bandCenterFreqsHz[i], preampDb + bandGainsDb.getOrElse(i) { 0f }
                             )
                             eq.setBand(i, eqBand)
                         }

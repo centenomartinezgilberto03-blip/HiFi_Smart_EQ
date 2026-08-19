@@ -6,9 +6,11 @@ import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
@@ -26,6 +28,7 @@ import com.gilbertcenteno.hifismarteq.audio.AudioPlaybackMonitor
 import com.gilbertcenteno.hifismarteq.audio.EqRepository
 import com.gilbertcenteno.hifismarteq.audio.EqState
 import com.gilbertcenteno.hifismarteq.model.*
+import com.gilbertcenteno.hifismarteq.profile.ProfileImporter
 import com.gilbertcenteno.hifismarteq.profile.ProfileManager
 import com.gilbertcenteno.hifismarteq.service.HifiEqService
 import kotlin.math.roundToInt
@@ -34,6 +37,16 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var monitor: AudioPlaybackMonitor
     private lateinit var profileManager: ProfileManager
+
+    private val filePicker = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let {
+            val result = ProfileImporter.importFromCsv(this, it) ?: ProfileImporter.importFromTxt(this, it)
+            result?.let { (name, gains) ->
+                EqRepository.setAllBandGains(gains)
+                profileManager.saveProfile(name, 0f, gains, 0, 0)
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,7 +63,11 @@ class MainActivity : ComponentActivity() {
         profileManager = ProfileManager(this)
 
         setContent {
-            MaterialTheme {
+            var isDarkMode by remember { mutableStateOf(isSystemInDarkTheme()) }
+            
+            MaterialTheme(
+                colorScheme = if (isDarkMode) darkColorScheme() else lightColorScheme()
+            ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -69,11 +86,14 @@ class MainActivity : ComponentActivity() {
                         showSaveDialog = showSaveDialog,
                         showLoadDialog = showLoadDialog,
                         profileName = profileName,
+                        isDarkMode = isDarkMode,
                         profileManager = profileManager,
+                        onToggleDarkMode = { isDarkMode = !isDarkMode },
                         onToggleEditing = { isEditing = !isEditing },
                         onShowSaveDialog = { showSaveDialog = !showSaveDialog },
                         onShowLoadDialog = { showLoadDialog = !showLoadDialog },
                         onProfileNameChange = { profileName = it },
+                        onImportProfile = { filePicker.launch("*/*") },
                         onSaveProfile = {
                             if (profileName.isNotBlank()) {
                                 profileManager.saveProfile(
@@ -134,11 +154,14 @@ fun MainScreen(
     showSaveDialog: Boolean,
     showLoadDialog: Boolean,
     profileName: String,
+    isDarkMode: Boolean,
     profileManager: ProfileManager,
+    onToggleDarkMode: () -> Unit,
     onToggleEditing: () -> Unit,
     onShowSaveDialog: () -> Unit,
     onShowLoadDialog: () -> Unit,
     onProfileNameChange: (String) -> Unit,
+    onImportProfile: () -> Unit,
     onSaveProfile: () -> Unit,
     onLoadProfile: (String) -> Unit,
     onDeleteProfile: (String) -> Unit,
@@ -167,6 +190,12 @@ fun MainScreen(
             TopAppBar(
                 title = { Text("HiFi Smart EQ Pro") },
                 actions = {
+                    IconButton(onClick = onToggleDarkMode) {
+                        Text(if (isDarkMode) "☀️" else "🌙", style = MaterialTheme.typography.titleLarge)
+                    }
+                    IconButton(onClick = onImportProfile) {
+                        Text("📁", style = MaterialTheme.typography.titleLarge)
+                    }
                     IconButton(onClick = onShowLoadDialog) {
                         Text("📂", style = MaterialTheme.typography.titleLarge)
                     }
@@ -266,38 +295,6 @@ fun MainScreen(
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("🎚️ Compresor", style = MaterialTheme.typography.titleMedium)
-                        Row {
-                            Switch(
-                                checked = state.compressor.enabled,
-                                onCheckedChange = { onCompressorChange(state.compressor.copy(enabled = it)) },
-                                enabled = isEditing
-                            )
-                            Text("Activado")
-                        }
-                    }
-                }
-            }
-
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("🎯 Limitador", style = MaterialTheme.typography.titleMedium)
-                        Row {
-                            Switch(
-                                checked = state.limiter.enabled,
-                                onCheckedChange = { onLimiterChange(state.limiter.copy(enabled = it)) },
-                                enabled = isEditing
-                            )
-                            Text("Activado")
-                        }
-                    }
-                }
-            }
-
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp)) {
                         Text("🎧 Sonido Espacial", style = MaterialTheme.typography.titleMedium)
                         Row {
                             Switch(
@@ -323,7 +320,9 @@ fun MainScreen(
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("📱 Sesiones: $sessionsCount", style = MaterialTheme.typography.titleMedium)
+                        Text("Creado por Gilbert Centeno", style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Center)
+                        Text("Versión 1.1.0", style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
+                        Text("📱 Sesiones: $sessionsCount", style = MaterialTheme.typography.bodySmall)
                         Button(
                             onClick = onOpenNotificationListenerSettings,
                             modifier = Modifier.fillMaxWidth()

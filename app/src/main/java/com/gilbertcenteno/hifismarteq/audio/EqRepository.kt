@@ -33,9 +33,14 @@ object EqRepository {
     private val _state = MutableStateFlow(EqState())
     val state: StateFlow<EqState> = _state.asStateFlow()
 
-    fun setEnabled(enabled: Boolean) = _state.update { it.copy(isEnabled = enabled) }
-    fun setPreamp(gainDb: Float) = _state.update { it.copy(preampGainDb = gainDb.coerceIn(-20f, 20f)) }
-    
+    fun setEnabled(enabled: Boolean) {
+        _state.update { it.copy(isEnabled = enabled) }
+    }
+
+    fun setPreamp(gainDb: Float) {
+        _state.update { it.copy(preampGainDb = gainDb.coerceIn(-20f, 20f)) }
+    }
+
     fun setBandGain(index: Int, gainDb: Float) {
         _state.update {
             val newGains = it.bandGains.toMutableList()
@@ -46,11 +51,19 @@ object EqRepository {
         }
     }
 
+    fun setAllBandGains(gains: List<Float>) {
+        _state.update {
+            val newGains = gains.map { it.coerceIn(-15f, 15f) }.toMutableList()
+            while (newGains.size < 32) newGains.add(0f)
+            if (newGains.size > 32) newGains.subList(0, 32)
+            it.copy(bandGains = newGains.toList())
+        }
+    }
+
     fun setSpatialAudioEnabled(enabled: Boolean) = _state.update { it.copy(isSpatialAudioEnabled = enabled) }
     fun setSpatialAudioSupported(supported: Boolean) = _state.update { it.copy(spatialAudioSupported = supported) }
     fun setSpatialStrength(strength: Short) = _state.update { it.copy(spatialStrength = strength) }
     fun setBassBoost(percent: Int) = _state.update { it.copy(bassBoostPercent = percent.coerceIn(0, 100)) }
-    
     fun setCompressor(settings: CompressorSettings) = _state.update { it.copy(compressor = settings) }
     fun setLimiter(settings: LimiterSettings) = _state.update { it.copy(limiter = settings) }
     fun setReverb(settings: ReverbSettings) = _state.update { it.copy(reverb = settings) }
