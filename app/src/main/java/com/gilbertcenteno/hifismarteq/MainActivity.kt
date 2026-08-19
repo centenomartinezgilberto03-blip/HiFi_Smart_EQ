@@ -6,10 +6,8 @@ import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,11 +15,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -64,7 +59,6 @@ class MainActivity : ComponentActivity() {
                     var showPresets by remember { mutableStateOf(false) }
                     var showSaveDialog by remember { mutableStateOf(false) }
                     var profileName by remember { mutableStateOf("") }
-                    var selectedPreset by remember { mutableStateOf("Personalizado") }
 
                     MainScreen(
                         state = state,
@@ -73,20 +67,11 @@ class MainActivity : ComponentActivity() {
                         showPresets = showPresets,
                         showSaveDialog = showSaveDialog,
                         profileName = profileName,
-                        selectedPreset = selectedPreset,
                         profileManager = profileManager,
                         onToggleEditing = { isEditing = !isEditing },
                         onShowPresets = { showPresets = !showPresets },
                         onShowSaveDialog = { showSaveDialog = !showSaveDialog },
                         onProfileNameChange = { profileName = it },
-                        onPresetSelected = { preset ->
-                            selectedPreset = preset.name
-                            preset.bandGains.forEachIndexed { index, gain ->
-                                EqRepository.setBandGain(index, gain)
-                            }
-                            EqRepository.setPreamp(preset.preampDb)
-                            showPresets = false
-                        },
                         onSaveProfile = {
                             if (profileName.isNotBlank()) {
                                 profileManager.saveProfile(
@@ -146,13 +131,11 @@ fun MainScreen(
     showPresets: Boolean,
     showSaveDialog: Boolean,
     profileName: String,
-    selectedPreset: String,
     profileManager: ProfileManager,
     onToggleEditing: () -> Unit,
     onShowPresets: () -> Unit,
     onShowSaveDialog: () -> Unit,
     onProfileNameChange: (String) -> Unit,
-    onPresetSelected: (com.gilbertcenteno.hifismarteq.model.Preset) -> Unit,
     onSaveProfile: () -> Unit,
     onLoadProfile: (String) -> Unit,
     onDeleteProfile: (String) -> Unit,
@@ -203,7 +186,6 @@ fun MainScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Indicador de modo
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -220,7 +202,6 @@ fun MainScreen(
                 }
             }
 
-            // Ecualizador vertical grande
             item {
                 Card(
                     modifier = Modifier
@@ -229,7 +210,7 @@ fun MainScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = if (isEditing) "🎛️ Ecualizador de 32 Bandas (Editable)" else "🎛️ Ecualizador de 32 Bandas (Bloqueado)",
+                            text = "🎛️ Ecualizador de 32 Bandas",
                             style = MaterialTheme.typography.titleMedium,
                             textAlign = TextAlign.Center
                         )
@@ -243,7 +224,6 @@ fun MainScreen(
                 }
             }
 
-            // Preamplificador
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
@@ -258,7 +238,6 @@ fun MainScreen(
                 }
             }
 
-            // Bass Boost
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
@@ -273,7 +252,6 @@ fun MainScreen(
                 }
             }
 
-            // Compresor
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
@@ -294,19 +272,11 @@ fun MainScreen(
                                 valueRange = -60f..0f,
                                 enabled = isEditing
                             )
-                            Text("Ratio: ${state.compressor.ratio}:1")
-                            Slider(
-                                value = state.compressor.ratio,
-                                onValueChange = { onCompressorChange(state.compressor.copy(ratio = it)) },
-                                valueRange = 1f..20f,
-                                enabled = isEditing
-                            )
                         }
                     }
                 }
             }
 
-            // Limitador
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
@@ -319,20 +289,10 @@ fun MainScreen(
                             )
                             Text("Activado")
                         }
-                        if (state.limiter.enabled) {
-                            Text("Threshold: ${state.limiter.thresholdDb} dB")
-                            Slider(
-                                value = state.limiter.thresholdDb,
-                                onValueChange = { onLimiterChange(state.limiter.copy(thresholdDb = it)) },
-                                valueRange = -30f..0f,
-                                enabled = isEditing
-                            )
-                        }
                     }
                 }
             }
 
-            // Sonido Espacial
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
@@ -358,30 +318,6 @@ fun MainScreen(
                 }
             }
 
-            // Stereo Enhance
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("🎵 Stereo Enhance", style = MaterialTheme.typography.titleMedium)
-                        Text("Balance: ${"%.1f".format(state.stereoEnhance.balance)}")
-                        Slider(
-                            value = state.stereoEnhance.balance,
-                            onValueChange = { onStereoEnhanceChange(state.stereoEnhance.copy(balance = it)) },
-                            valueRange = -1f..1f,
-                            enabled = isEditing
-                        )
-                        Text("Stereo Width: ${"%.0f".format(state.stereoEnhance.stereoWidth)}%")
-                        Slider(
-                            value = state.stereoEnhance.stereoWidth,
-                            onValueChange = { onStereoEnhanceChange(state.stereoEnhance.copy(stereoWidth = it)) },
-                            valueRange = 0f..200f,
-                            enabled = isEditing
-                        )
-                    }
-                }
-            }
-
-            // Perfiles guardados
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
@@ -417,7 +353,6 @@ fun MainScreen(
                 }
             }
 
-            // Configuración
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
@@ -434,39 +369,27 @@ fun MainScreen(
         }
     }
 
-    // Diálogo de presets
     if (showPresets) {
         AlertDialog(
             onDismissRequest = onShowPresets,
-            title = { Text("Presets de Ecualización") },
+            title = { Text("Presets") },
             text = {
-                LazyColumn {
-                    item {
-                        TextButton(onClick = { onPresetSelected(com.gilbertcenteno.hifismarteq.model.Preset("Plano", "Sin modificaciones", 0f, 0, 0, List(32) { 0f })) }) {
-                            Text("Plano")
-                        }
-                    }
-                    item {
-                        TextButton(onClick = { onPresetSelected(com.gilbertcenteno.hifismarteq.model.Preset("Bass Boost", "Graves potentes", 3f, 80, 0, listOf(8f, 7f, 6f, 5f, 4f, 3f, 2f, 1f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f)) }) {
-                            Text("Bass Boost")
-                        }
-                    }
-                    item {
-                        TextButton(onClick = { onPresetSelected(com.gilbertcenteno.hifismarteq.model.Preset("Treble Boost", "Agudos brillantes", 0f, 0, 0, listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f, 8f, 8f, 8f, 8f)) }) {
-                            Text("Treble Boost")
-                        }
-                    }
+                Column {
+                    val flatPreset = Preset("Plano", "Sin modificaciones", 0f, 0, 0, List(32) { 0f })
+                    val bassPreset = Preset("Bass Boost", "Graves potentes", 3f, 80, 0, listOf(8f, 7f, 6f, 5f, 4f, 3f, 2f, 1f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f))
+                    val treblePreset = Preset("Treble Boost", "Agudos brillantes", 0f, 0, 0, listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f, 8f, 8f, 8f, 8f))
+                    
+                    TextButton(onClick = { onShowPresets() }) { Text(flatPreset.name) }
+                    TextButton(onClick = { onShowPresets() }) { Text(bassPreset.name) }
+                    TextButton(onClick = { onShowPresets() }) { Text(treblePreset.name) }
                 }
             },
             confirmButton = {
-                TextButton(onClick = onShowPresets) {
-                    Text("Cerrar")
-                }
+                TextButton(onClick = onShowPresets) { Text("Cerrar") }
             }
         )
     }
 
-    // Diálogo para guardar
     if (showSaveDialog) {
         AlertDialog(
             onDismissRequest = onShowSaveDialog,
@@ -479,14 +402,10 @@ fun MainScreen(
                 )
             },
             confirmButton = {
-                Button(onClick = onSaveProfile) {
-                    Text("Guardar")
-                }
+                Button(onClick = onSaveProfile) { Text("Guardar") }
             },
             dismissButton = {
-                TextButton(onClick = onShowSaveDialog) {
-                    Text("Cancelar")
-                }
+                TextButton(onClick = onShowSaveDialog) { Text("Cancelar") }
             }
         )
     }
@@ -511,14 +430,12 @@ fun BigVerticalEqualizer(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.weight(1f)
             ) {
-                // Valor de ganancia
                 Text(
                     text = "${"%.0f".format(gain)}",
                     fontSize = 8.sp,
                     textAlign = TextAlign.Center
                 )
                 
-                // Slider vertical GRANDE
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -538,7 +455,6 @@ fun BigVerticalEqualizer(
                             shape = RoundedCornerShape(4.dp)
                         )
                 ) {
-                    // Línea central
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -547,7 +463,6 @@ fun BigVerticalEqualizer(
                             .background(Color(0xFF666666))
                     )
                     
-                    // Barra de ganancia
                     val barHeight = ((gain + 15) / 30) * 320
                     Box(
                         modifier = Modifier
@@ -559,18 +474,8 @@ fun BigVerticalEqualizer(
                                 shape = RoundedCornerShape(4.dp)
                             )
                     )
-                    
-                    // Indicador de posición
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(4.dp)
-                            .offset(y = (160 - barHeight).dp)
-                            .background(Color(0xFF00BFFF))
-                    )
                 }
                 
-                // Frecuencia
                 Text(
                     text = if (frequencies[index] >= 1000) 
                         "${"%.1f".format(frequencies[index] / 1000)}k" 
@@ -583,4 +488,3 @@ fun BigVerticalEqualizer(
         }
     }
 }
-
