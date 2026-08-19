@@ -8,8 +8,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -56,21 +58,21 @@ class MainActivity : ComponentActivity() {
                     val state by EqRepository.state.collectAsState()
                     val sessions by monitor.sessions.collectAsState()
                     var isEditing by remember { mutableStateOf(false) }
-                    var showPresets by remember { mutableStateOf(false) }
                     var showSaveDialog by remember { mutableStateOf(false) }
+                    var showLoadDialog by remember { mutableStateOf(false) }
                     var profileName by remember { mutableStateOf("") }
 
                     MainScreen(
                         state = state,
                         sessionsCount = sessions.size,
                         isEditing = isEditing,
-                        showPresets = showPresets,
                         showSaveDialog = showSaveDialog,
+                        showLoadDialog = showLoadDialog,
                         profileName = profileName,
                         profileManager = profileManager,
                         onToggleEditing = { isEditing = !isEditing },
-                        onShowPresets = { showPresets = !showPresets },
                         onShowSaveDialog = { showSaveDialog = !showSaveDialog },
+                        onShowLoadDialog = { showLoadDialog = !showLoadDialog },
                         onProfileNameChange = { profileName = it },
                         onSaveProfile = {
                             if (profileName.isNotBlank()) {
@@ -92,6 +94,7 @@ class MainActivity : ComponentActivity() {
                                     EqRepository.setBandGain(index, gain)
                                 }
                             }
+                            showLoadDialog = false
                         },
                         onDeleteProfile = { name ->
                             profileManager.deleteProfile(name)
@@ -128,13 +131,13 @@ fun MainScreen(
     state: EqState,
     sessionsCount: Int,
     isEditing: Boolean,
-    showPresets: Boolean,
     showSaveDialog: Boolean,
+    showLoadDialog: Boolean,
     profileName: String,
     profileManager: ProfileManager,
     onToggleEditing: () -> Unit,
-    onShowPresets: () -> Unit,
     onShowSaveDialog: () -> Unit,
+    onShowLoadDialog: () -> Unit,
     onProfileNameChange: (String) -> Unit,
     onSaveProfile: () -> Unit,
     onLoadProfile: (String) -> Unit,
@@ -164,8 +167,11 @@ fun MainScreen(
             TopAppBar(
                 title = { Text("HiFi Smart EQ Pro") },
                 actions = {
-                    IconButton(onClick = onShowPresets) {
-                        Text("🎵", style = MaterialTheme.typography.titleLarge)
+                    IconButton(onClick = onShowLoadDialog) {
+                        Text("📂", style = MaterialTheme.typography.titleLarge)
+                    }
+                    IconButton(onClick = onShowSaveDialog) {
+                        Text("💾", style = MaterialTheme.typography.titleLarge)
                     }
                     IconButton(onClick = onToggleEditing) {
                         Text(if (isEditing) "🔓" else "🔒", style = MaterialTheme.typography.titleLarge)
@@ -176,7 +182,7 @@ fun MainScreen(
                         modifier = Modifier.padding(end = 8.dp)
                     )
                 }
-            )
+            }
         }
     ) { paddingValues ->
         LazyColumn(
@@ -194,7 +200,7 @@ fun MainScreen(
                     )
                 ) {
                     Text(
-                        text = if (isEditing) "🔓 Modo Edición - Puedes ajustar las bandas" else "🔒 Bloqueado - Toca el candado para editar",
+                        text = if (isEditing) "🔓 Modo Edición - Desliza las bandas" else "🔒 Bloqueado - Toca el candado",
                         modifier = Modifier.padding(16.dp),
                         style = MaterialTheme.typography.titleSmall,
                         textAlign = TextAlign.Center
@@ -214,8 +220,13 @@ fun MainScreen(
                             style = MaterialTheme.typography.titleMedium,
                             textAlign = TextAlign.Center
                         )
+                        Text(
+                            text = "Desliza horizontalmente para ver todas las bandas →",
+                            style = MaterialTheme.typography.bodySmall,
+                            textAlign = TextAlign.Center
+                        )
                         Spacer(modifier = Modifier.height(16.dp))
-                        BigVerticalEqualizer(
+                        ScrollableEqualizer(
                             gains = state.bandGains,
                             enabled = state.isEnabled && isEditing,
                             onGainChange = onBandGainChange
@@ -321,41 +332,6 @@ fun MainScreen(
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("💾 Perfiles Guardados", style = MaterialTheme.typography.titleMedium)
-                        if (profiles.isNotEmpty()) {
-                            profiles.forEach { profile ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    TextButton(onClick = { onLoadProfile(profile) }) {
-                                        Text(profile)
-                                    }
-                                    TextButton(onClick = {
-                                        onDeleteProfile(profile)
-                                        profiles.remove(profile)
-                                    }) {
-                                        Text("🗑️", color = MaterialTheme.colorScheme.error)
-                                    }
-                                }
-                            }
-                        } else {
-                            Text("No hay perfiles guardados", style = MaterialTheme.typography.bodySmall)
-                        }
-                        Button(
-                            onClick = onShowSaveDialog,
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = isEditing
-                        ) {
-                            Text("💾 Guardar ajuste actual")
-                        }
-                    }
-                }
-            }
-
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp)) {
                         Text("📱 Sesiones: $sessionsCount", style = MaterialTheme.typography.titleMedium)
                         Button(
                             onClick = onOpenNotificationListenerSettings,
@@ -369,36 +345,16 @@ fun MainScreen(
         }
     }
 
-    if (showPresets) {
-        AlertDialog(
-            onDismissRequest = onShowPresets,
-            title = { Text("Presets") },
-            text = {
-                Column {
-                    val flatPreset = Preset("Plano", "Sin modificaciones", 0f, 0, 0, List(32) { 0f })
-                    val bassPreset = Preset("Bass Boost", "Graves potentes", 3f, 80, 0, listOf(8f, 7f, 6f, 5f, 4f, 3f, 2f, 1f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f))
-                    val treblePreset = Preset("Treble Boost", "Agudos brillantes", 0f, 0, 0, listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f, 8f, 8f, 8f, 8f))
-                    
-                    TextButton(onClick = { onShowPresets() }) { Text(flatPreset.name) }
-                    TextButton(onClick = { onShowPresets() }) { Text(bassPreset.name) }
-                    TextButton(onClick = { onShowPresets() }) { Text(treblePreset.name) }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = onShowPresets) { Text("Cerrar") }
-            }
-        )
-    }
-
+    // Diálogo para guardar
     if (showSaveDialog) {
         AlertDialog(
             onDismissRequest = onShowSaveDialog,
-            title = { Text("Guardar Ajuste") },
+            title = { Text("💾 Guardar Configuración") },
             text = {
                 OutlinedTextField(
                     value = profileName,
                     onValueChange = onProfileNameChange,
-                    label = { Text("Nombre del ajuste") }
+                    label = { Text("Nombre de la configuración") }
                 )
             },
             confirmButton = {
@@ -409,30 +365,69 @@ fun MainScreen(
             }
         )
     }
+
+    // Diálogo para cargar
+    if (showLoadDialog) {
+        AlertDialog(
+            onDismissRequest = onShowLoadDialog,
+            title = { Text("📂 Configuraciones Guardadas") },
+            text = {
+                if (profiles.isNotEmpty()) {
+                    LazyColumn {
+                        profiles.forEach { profile ->
+                            item {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    TextButton(
+                                        onClick = { onLoadProfile(profile) },
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(profile)
+                                    }
+                                    TextButton(onClick = { onDeleteProfile(profile) }) {
+                                        Text("🗑️", color = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Text("No hay configuraciones guardadas")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = onShowLoadDialog) { Text("Cerrar") }
+            }
+        )
+    }
 }
 
 @Composable
-fun BigVerticalEqualizer(
+fun ScrollableEqualizer(
     gains: List<Float>,
     enabled: Boolean,
     onGainChange: (Int, Float) -> Unit
 ) {
     val frequencies = EqRepository.FREQUENCIES
+    val scrollState = rememberScrollState()
     
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .horizontalScroll(scrollState)
             .height(380.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp)
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         gains.forEachIndexed { index, gain ->
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.width(45.dp)
             ) {
                 Text(
                     text = "${"%.0f".format(gain)}",
-                    fontSize = 8.sp,
+                    fontSize = 10.sp,
                     textAlign = TextAlign.Center
                 )
                 
@@ -452,7 +447,7 @@ fun BigVerticalEqualizer(
                         }
                         .background(
                             color = if (enabled) Color(0xFF3A3A3A) else Color(0xFF2A2A2A),
-                            shape = RoundedCornerShape(4.dp)
+                            shape = RoundedCornerShape(6.dp)
                         )
                 ) {
                     Box(
@@ -466,12 +461,12 @@ fun BigVerticalEqualizer(
                     val barHeight = ((gain + 15) / 30) * 320
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(0.8f)
+                            .fillMaxWidth(0.85f)
                             .height(barHeight.dp)
                             .align(Alignment.BottomCenter)
                             .background(
                                 color = if (gain > 0) Color(0xFF00FF00) else Color(0xFFFF6600),
-                                shape = RoundedCornerShape(4.dp)
+                                shape = RoundedCornerShape(6.dp)
                             )
                     )
                 }
@@ -481,7 +476,7 @@ fun BigVerticalEqualizer(
                         "${"%.1f".format(frequencies[index] / 1000)}k" 
                     else 
                         "${frequencies[index].roundToInt()}",
-                    fontSize = 7.sp,
+                    fontSize = 8.sp,
                     textAlign = TextAlign.Center
                 )
             }
