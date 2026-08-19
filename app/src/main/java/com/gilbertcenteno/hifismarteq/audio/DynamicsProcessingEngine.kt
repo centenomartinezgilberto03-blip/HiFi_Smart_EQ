@@ -5,6 +5,7 @@ import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
 import android.media.audiofx.Virtualizer
 import android.media.audiofx.DynamicsProcessing
+import android.media.audiofx.BassBoost
 import android.os.Build
 
 object DynamicsProcessingEngine {
@@ -12,9 +13,11 @@ object DynamicsProcessingEngine {
     private var globalEq: Equalizer? = null
     private var globalLoudness: LoudnessEnhancer? = null
     private var globalVirtualizer: Virtualizer? = null
+    private var globalBassBoost: BassBoost? = null
 
     private val activeEngines = mutableMapOf<Int, DynamicsProcessing>()
     private val activeVirtualizers = mutableMapOf<Int, Virtualizer>()
+    private val activeBassBoost = mutableMapOf<Int, BassBoost>()
 
     fun checkSpatialAudioSupport(context: Context): Boolean = true
 
@@ -23,10 +26,13 @@ object DynamicsProcessingEngine {
             runCatching { globalEq = Equalizer(0, 0).apply { enabled = true } }
         }
         if (globalLoudness == null) {
-            runCatching { globalLoudness = LoudnessEnhancer(0).apply { enabled = true } }
+            runCatching { globalLoudness = LoudnessEnhancer(0).apply { enabled = false } }
         }
         if (globalVirtualizer == null) {
             runCatching { globalVirtualizer = Virtualizer(0, 0).apply { enabled = false } }
+        }
+        if (globalBassBoost == null) {
+            runCatching { globalBassBoost = BassBoost(0, 0).apply { enabled = true } }
         }
     }
 
@@ -52,6 +58,15 @@ object DynamicsProcessingEngine {
             }
         }
 
+        val bassIter = activeBassBoost.iterator()
+        while (bassIter.hasNext()) {
+            val (id, bass) = bassIter.next()
+            if (!validSessions.contains(id)) {
+                runCatching { bass.enabled = false; bass.release() }
+                bassIter.remove()
+            }
+        }
+
         for (id in validSessions) {
             if (!activeEngines.containsKey(id)) {
                 val dp = createEngine(id)
@@ -61,6 +76,10 @@ object DynamicsProcessingEngine {
                 val virt = createVirtualizer(id)
                 if (virt != null) activeVirtualizers[id] = virt
             }
+            if (!activeBassBoost.containsKey(id)) {
+                val bass = createBassBoost(id)
+                if (bass != null) activeBassBoost[id] = bass
+            }
         }
     }
 
@@ -69,14 +88,7 @@ object DynamicsProcessingEngine {
         return runCatching {
             val builder = DynamicsProcessing.Config.Builder(
                 DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
-                2,      // channel count
-                true,   // preEq enabled
-                10,     // preEq bands
-                false,  // mbc enabled
-                1,      // mbc bands
-                false,  // postEq enabled
-                1,      // postEq bands
-                true    // limiter enabled
+                2, true, 32, false, 1, true, 1, true
             )
             val config = builder.build()
             val dp = DynamicsProcessing(0, sessionId, config)
@@ -93,6 +105,15 @@ object DynamicsProcessingEngine {
         }.getOrNull()
     }
 
+    private fun createBassBoost(sessionId: Int): BassBoost? {
+        return runCatching {
+            val bass = BassBoost(0, sessionId)
+            bass.enabled = true
+            bass.setStrength(0)
+            bass
+        }.getOrNull()
+    }
+
     fun applySettings(
         enabled: Boolean,
         preampDb: Float,
@@ -103,7 +124,6 @@ object DynamicsProcessingEngine {
     ) {
         ensureGlobalEffects()
 
-        // Ajustes globales
         runCatching {
             globalEq?.enabled = enabled
             if (enabled && globalEq != null) {
@@ -117,23 +137,12 @@ object DynamicsProcessingEngine {
         }
 
         runCatching {
-            globalLoudness?.enabled = enabled
-            if (enabled && globalLoudness != null) {
-                val gainmB = (preampDb * 100).toInt().coerceIn(0, 2000)
-                globalLoudness!!.setTargetGain(gainmB)
+            globalVirtualizer?.enabled = spatialAudioEnabled && enabled
+            if (spatialAudioEnabled && enabled && globalVirtualizer?.strengthSupported == true) {
+                globalVirtualizer?.setStrength(spatialStrength)
             }
         }
 
-        runCatching {
-            if (globalVirtualizer != null) {
-                globalVirtualizer!!.enabled = spatialAudioEnabled && enabled
-                if (spatialAudioEnabled && enabled && globalVirtualizer!!.strengthSupported) {
-                    globalVirtualizer!!.setStrength(spatialStrength)
-                }
-            }
-        }
-
-        // Ajustes en sesiones individuales cuando existen
         if (Build.VERSION.SDK_INT >= 28) {
             for ((_, dp) in activeEngines) {
                 runCatching {
@@ -142,9 +151,7 @@ object DynamicsProcessingEngine {
                         val eq = DynamicsProcessing.Eq(true, true, bandCenterFreqsHz.size)
                         for (i in bandCenterFreqsHz.indices) {
                             val eqBand = DynamicsProcessing.EqBand(
-                                true,
-                                bandCenterFreqsHz[i],
-                                preampDb + bandGainsDb.getOrElse(i) { 0f }
+                                true, bandCenterFreqsHz[i], bandGainsDb.getOrElse(i) { 0f }
                             )
                             eq.setBand(i, eqBand)
                         }
@@ -156,13 +163,9 @@ object DynamicsProcessingEngine {
 
         for ((_, virt) in activeVirtualizers) {
             runCatching {
-                if (spatialAudioEnabled && enabled) {
-                    virt.enabled = true
-                    if (virt.strengthSupported) {
-                        virt.setStrength(spatialStrength)
-                    }
-                } else {
-                    virt.enabled = false
+                virt.enabled = spatialAudioEnabled && enabled
+                if (spatialAudioEnabled && enabled && virt.strengthSupported) {
+                    virt.setStrength(spatialStrength)
                 }
             }
         }
@@ -172,9 +175,11 @@ object DynamicsProcessingEngine {
         runCatching { globalEq?.release() }
         runCatching { globalLoudness?.release() }
         runCatching { globalVirtualizer?.release() }
+        runCatching { globalBassBoost?.release() }
         globalEq = null
         globalLoudness = null
         globalVirtualizer = null
+        globalBassBoost = null
 
         for ((_, dp) in activeEngines) {
             runCatching { dp.enabled = false; dp.release() }
@@ -185,6 +190,10 @@ object DynamicsProcessingEngine {
             runCatching { virt.enabled = false; virt.release() }
         }
         activeVirtualizers.clear()
+
+        for ((_, bass) in activeBassBoost) {
+            runCatching { bass.enabled = false; bass.release() }
+        }
+        activeBassBoost.clear()
     }
 }
-

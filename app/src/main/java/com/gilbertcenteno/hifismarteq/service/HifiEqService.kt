@@ -128,7 +128,7 @@ class HifiEqService : Service() {
         }
 
         val notification: Notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("HiFi Smart EQ Activo")
+            .setContentTitle("HiFi Smart EQ Pro")
             .setContentText("Procesando audio en tiempo real")
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setPriority(NotificationCompat.PRIORITY_LOW)
