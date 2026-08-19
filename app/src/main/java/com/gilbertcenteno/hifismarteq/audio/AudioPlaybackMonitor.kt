@@ -18,7 +18,7 @@ class AudioPlaybackMonitor(context: Context) {
     private val _sessions = MutableStateFlow<List<ActiveAudioSession>>(emptyList())
     val sessions: StateFlow<List<ActiveAudioSession>> = _sessions.asStateFlow()
 
-    private val callback = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+    private val callback: AudioManager.AudioPlaybackCallback? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         object : AudioManager.AudioPlaybackCallback() {
             override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>?) {
                 super.onPlaybackConfigChanged(configs)
@@ -30,7 +30,7 @@ class AudioPlaybackMonitor(context: Context) {
     fun start() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && callback != null) {
             runCatching {
-                audioManager.registerAudioPlaybackCallback(callback, null)
+                audioManager.registerAudioPlaybackCallback(callback!!, null)
                 updateFromConfigs(audioManager.activePlaybackConfigurations)
             }
         }
@@ -39,7 +39,7 @@ class AudioPlaybackMonitor(context: Context) {
     fun stop() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && callback != null) {
             runCatching {
-                audioManager.unregisterAudioPlaybackCallback(callback)
+                audioManager.unregisterAudioPlaybackCallback(callback!!)
             }
         }
     }
@@ -90,4 +90,5 @@ class AudioPlaybackMonitor(context: Context) {
         _sessions.value = _sessions.value.filter { it.audioSessionId != sessionId }
     }
 }
+
 
