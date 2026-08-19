@@ -107,7 +107,7 @@ fun MainScreen(
                         )
                         if (sessionsCount == 0) {
                             Text(
-                                text = "Reproduce música o abre tu reproductor. Si no detecta, se aplicará a la sesión global (0).",
+                                text = "Procesando audio mediante la Sesión Global (0).",
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
@@ -124,32 +124,30 @@ fun MainScreen(
                 }
             }
 
-            if (state.spatialAudioSupported) {
-                item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text(
-                                    text = "Sonido Espacial 3D",
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                                Text(
-                                    text = "Efecto envolvente tridimensional",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                            Switch(
-                                checked = state.isSpatialAudioEnabled,
-                                onCheckedChange = onSpatialAudioToggle,
-                                enabled = state.isEnabled
+            item {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Sonido Espacial 3D",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "Efecto envolvente tridimensional",
+                                style = MaterialTheme.typography.bodySmall
                             )
                         }
+                        Switch(
+                            checked = state.isSpatialAudioEnabled,
+                            onCheckedChange = onSpatialAudioToggle,
+                            enabled = state.isEnabled
+                        )
                     }
                 }
             }
