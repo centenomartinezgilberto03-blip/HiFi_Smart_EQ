@@ -33,7 +33,7 @@ object EqRepository {
         _state.update {
             val newGains = it.bandGains.toMutableList()
             if (index in newGains.indices) {
-                newGains[index] = gainDb
+                newGains[index] = gainDb.coerceIn(-12f, 12f)
             }
             it.copy(bandGains = newGains)
         }

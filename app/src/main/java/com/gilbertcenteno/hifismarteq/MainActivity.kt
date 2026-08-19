@@ -6,14 +6,20 @@ import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import com.gilbertcenteno.hifismarteq.audio.AudioPlaybackMonitor
 import com.gilbertcenteno.hifismarteq.audio.EqRepository
@@ -22,6 +28,7 @@ import com.gilbertcenteno.hifismarteq.model.Preset
 import com.gilbertcenteno.hifismarteq.model.PresetLibrary
 import com.gilbertcenteno.hifismarteq.profile.ProfileManager
 import com.gilbertcenteno.hifismarteq.service.HifiEqService
+import kotlin.math.abs
 
 class MainActivity : ComponentActivity() {
 
@@ -54,6 +61,7 @@ class MainActivity : ComponentActivity() {
                     var customProfileName by remember { mutableStateOf("") }
                     var bassBoost by remember { mutableStateOf(0) }
                     var spatialStrength by remember { mutableStateOf(50) }
+                    var showPresets by remember { mutableStateOf(false) }
 
                     MainScreen(
                         state = state,
@@ -63,6 +71,8 @@ class MainActivity : ComponentActivity() {
                         spatialStrength = spatialStrength,
                         customProfileName = customProfileName,
                         profileManager = profileManager,
+                        showPresets = showPresets,
+                        onShowPresets = { showPresets = !showPresets },
                         onPresetSelected = { preset ->
                             selectedPreset = preset.name
                             preset.bandGains.forEachIndexed { index, gain ->
@@ -72,6 +82,7 @@ class MainActivity : ComponentActivity() {
                             EqRepository.setSpatialStrength((preset.virtualizerPercent * 10).toShort())
                             bassBoost = preset.bassBoostPercent
                             spatialStrength = preset.virtualizerPercent
+                            showPresets = false
                         },
                         onCustomProfileNameChange = { customProfileName = it },
                         onSaveProfile = {
@@ -97,7 +108,10 @@ class MainActivity : ComponentActivity() {
                         onDeleteProfile = { name ->
                             profileManager.deleteProfile(name)
                         },
-                        onBassBoostChange = { bassBoost = it },
+                        onBassBoostChange = { 
+                            bassBoost = it
+                            EqRepository.setBassBoost(it)
+                        },
                         onSpatialStrengthChange = { spatialStrength = it },
                         onToggleEnabled = { EqRepository.setEnabled(it) },
                         onPreampChange = { EqRepository.setPreamp(it) },
@@ -129,6 +143,8 @@ fun MainScreen(
     spatialStrength: Int,
     customProfileName: String,
     profileManager: ProfileManager,
+    showPresets: Boolean,
+    onShowPresets: () -> Unit,
     onPresetSelected: (Preset) -> Unit,
     onCustomProfileNameChange: (String) -> Unit,
     onSaveProfile: () -> Unit,
@@ -156,14 +172,50 @@ fun MainScreen(
             TopAppBar(
                 title = { Text("HiFi Smart EQ") },
                 actions = {
+                    IconButton(onClick = onShowPresets) {
+                        Text("⚙️", style = MaterialTheme.typography.titleLarge)
+                    }
                     Switch(
                         checked = state.isEnabled,
-                        onCheckedChange = onToggleEnabled
+                        onCheckedChange = onToggleEnabled,
+                        modifier = Modifier.padding(end = 8.dp)
                     )
                 }
             )
         }
     ) { paddingValues ->
+        if (showPresets) {
+            // Diálogo de presets
+            AlertDialog(
+                onDismissRequest = onShowPresets,
+                title = { Text("Presets de Ecualización") },
+                text = {
+                    LazyColumn {
+                        PresetLibrary.presets.forEach { preset ->
+                            item {
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(4.dp),
+                                    onClick = { onPresetSelected(preset) }
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Text(preset.name, style = MaterialTheme.typography.titleMedium)
+                                        Text(preset.description, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = onShowPresets) {
+                        Text("Cerrar")
+                    }
+                }
+            )
+        }
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -171,63 +223,30 @@ fun MainScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Presets
+            // Ecualizador vertical
             item {
-                Card(modifier = Modifier.fillMaxWidth()) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(300.dp)
+                ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Presets", style = MaterialTheme.typography.titleLarge)
-                        Text("Selecciona un preset predefinido", style = MaterialTheme.typography.bodySmall)
+                        Text("Ecualizador de 10 Bandas", style = MaterialTheme.typography.titleMedium)
                         Spacer(modifier = Modifier.height(8.dp))
-                        PresetLibrary.presets.forEach { preset ->
-                            FilterChip(
-                                selected = selectedPreset == preset.name,
-                                onClick = { onPresetSelected(preset) },
-                                label = { Text(preset.name) },
-                                modifier = Modifier.padding(4.dp)
-                            )
-                        }
+                        VerticalEqualizer(
+                            gains = state.bandGains,
+                            enabled = state.isEnabled,
+                            onGainChange = onBandGainChange
+                        )
                     }
                 }
             }
 
-            // Perfiles personalizados
+            // Control de graves mejorado
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Perfiles Personalizados", style = MaterialTheme.typography.titleLarge)
-                        if (profiles.isNotEmpty()) {
-                            profiles.forEach { profile ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    TextButton(onClick = { onLoadProfile(profile) }) {
-                                        Text(profile)
-                                    }
-                                    TextButton(onClick = {
-                                        onDeleteProfile(profile)
-                                        profiles.remove(profile)
-                                    }) {
-                                        Text("Eliminar", color = MaterialTheme.colorScheme.error)
-                                    }
-                                }
-                            }
-                        } else {
-                            Text("No hay perfiles guardados", style = MaterialTheme.typography.bodySmall)
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Button(onClick = { showSaveDialog = true }, modifier = Modifier.fillMaxWidth()) {
-                            Text("Guardar configuración actual")
-                        }
-                    }
-                }
-            }
-
-            // Control de graves
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Refuerzo de Graves: $bassBoost%", style = MaterialTheme.typography.titleMedium)
+                        Text("🎸 Refuerzo de Graves: $bassBoost%", style = MaterialTheme.typography.titleMedium)
                         Slider(
                             value = bassBoost.toFloat(),
                             onValueChange = { onBassBoostChange(it.toInt()) },
@@ -238,7 +257,7 @@ fun MainScreen(
                 }
             }
 
-            // Sonido Espacial con control de intensidad
+            // Sonido Espacial
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
@@ -246,7 +265,7 @@ fun MainScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Sonido Espacial 3D", style = MaterialTheme.typography.titleMedium)
+                            Text("🎧 Sonido Espacial 3D", style = MaterialTheme.typography.titleMedium)
                             Switch(
                                 checked = state.isSpatialAudioEnabled,
                                 onCheckedChange = onSpatialAudioToggle,
@@ -273,7 +292,7 @@ fun MainScreen(
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Preamplificador: ${"%.1f".format(state.preampGainDb)} dB", style = MaterialTheme.typography.titleMedium)
+                        Text("📊 Preamplificador: ${"%.1f".format(state.preampGainDb)} dB", style = MaterialTheme.typography.titleMedium)
                         Slider(
                             value = state.preampGainDb,
                             onValueChange = onPreampChange,
@@ -284,23 +303,34 @@ fun MainScreen(
                 }
             }
 
-            // Bandas de ecualización
+            // Perfiles personalizados
             item {
-                Text("10 Bandas de Ecualización", style = MaterialTheme.typography.titleLarge)
-            }
-
-            itemsIndexed(EqRepository.FREQUENCIES.toList()) { index, freq ->
-                val gain = state.bandGains.getOrElse(index) { 0f }
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Banda ${index + 1}: ${freq.toInt()} Hz")
-                        Text("Ganancia: ${"%.1f".format(gain)} dB")
-                        Slider(
-                            value = gain,
-                            onValueChange = { onBandGainChange(index, it) },
-                            valueRange = -12f..12f,
-                            enabled = state.isEnabled
-                        )
+                        Text("💾 Perfiles Personalizados", style = MaterialTheme.typography.titleMedium)
+                        if (profiles.isNotEmpty()) {
+                            profiles.forEach { profile ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    TextButton(onClick = { onLoadProfile(profile) }) {
+                                        Text(profile)
+                                    }
+                                    TextButton(onClick = {
+                                        onDeleteProfile(profile)
+                                        profiles.remove(profile)
+                                    }) {
+                                        Text("🗑️", color = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
+                        } else {
+                            Text("No hay perfiles guardados", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Button(onClick = { showSaveDialog = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Guardar configuración actual")
+                        }
                     }
                 }
             }
@@ -309,7 +339,7 @@ fun MainScreen(
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Sesiones detectadas: $sessionsCount", style = MaterialTheme.typography.titleMedium)
+                        Text("📱 Sesiones detectadas: $sessionsCount", style = MaterialTheme.typography.titleMedium)
                         Button(
                             onClick = onOpenNotificationListenerSettings,
                             modifier = Modifier.fillMaxWidth()
@@ -347,5 +377,82 @@ fun MainScreen(
                 }
             }
         )
+    }
+}
+
+@Composable
+fun VerticalEqualizer(
+    gains: List<Float>,
+    enabled: Boolean,
+    onGainChange: (Int, Float) -> Unit
+) {
+    val frequencies = EqRepository.FREQUENCIES
+    
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(200.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly
+    ) {
+        gains.forEachIndexed { index, gain ->
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Valor de ganancia
+                Text(
+                    text = "${"%.1f".format(gain)}",
+                    style = MaterialTheme.typography.labelSmall
+                )
+                
+                // Slider vertical personalizado
+                Box(
+                    modifier = Modifier
+                        .width(30.dp)
+                        .height(150.dp)
+                        .pointerInput(enabled) {
+                            if (enabled) {
+                                detectDragGestures { change, _ ->
+                                    val height = size.height
+                                    val newGain = ((height / 2 - change.position.y) / (height / 2) * 12f)
+                                        .coerceIn(-12f, 12f)
+                                    onGainChange(index, newGain)
+                                }
+                            }
+                        }
+                        .background(
+                            color = Color(0xFF2A2A2A),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                ) {
+                    // Barra de nivel
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(4.dp)
+                            .align(Alignment.Center)
+                            .background(Color(0xFF00FF00))
+                    )
+                    
+                    // Indicador de ganancia
+                    val indicatorHeight = ((gain + 12) / 24) * 150
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(4.dp)
+                            .offset(y = (75 - indicatorHeight).dp)
+                            .background(Color(0xFF00BFFF))
+                    )
+                }
+                
+                // Frecuencia
+                Text(
+                    text = if (frequencies[index] >= 1000) 
+                        "${"%.0f".format(frequencies[index] / 1000)}k" 
+                    else 
+                        "${frequencies[index].toInt()}",
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        }
     }
 }
