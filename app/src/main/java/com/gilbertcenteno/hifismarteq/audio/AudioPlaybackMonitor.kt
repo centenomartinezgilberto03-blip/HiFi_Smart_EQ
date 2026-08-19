@@ -8,93 +8,79 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-data class PlaybackSession(
-    val packageName: String,
+data class ActiveAudioSession(
     val audioSessionId: Int,
-    val uid: Int
+    val clientPackageName: String = "Desconocido"
 )
 
 class AudioPlaybackMonitor(context: Context) {
-    private val appContext = context.applicationContext
-    private val audioManager = appContext.getSystemService(AudioManager::class.java)
-    private val _sessions = MutableStateFlow<List<PlaybackSession>>(emptyList())
-    val sessions: StateFlow<List<PlaybackSession>> = _sessions.asStateFlow()
 
-    private var callback: AudioManager.AudioPlaybackCallback? = null
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private val _sessions = MutableStateFlow<List<ActiveAudioSession>>(emptyList())
+    val sessions: StateFlow<List<ActiveAudioSession>> = _sessions.asStateFlow()
+
+    private val callback = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        object : AudioManager.AudioPlaybackCallback() {
+            override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>?) {
+                super.onPlaybackConfigChanged(configs)
+                updateSessions(configs)
+            }
+        }
+    } else null
 
     fun start() {
-        if (Build.VERSION.SDK_INT >= 26 && audioManager != null) {
-            if (callback == null) {
-                callback = object : AudioManager.AudioPlaybackCallback() {
-                    override fun onPlaybackConfigChanged(configs: List<AudioPlaybackConfiguration>) {
-                        update(configs)
-                    }
-                }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && callback != null) {
+            runCatching {
+                audioManager.registerAudioPlaybackCallback(callback, null)
+                updateSessions(audioManager.activePlaybackConfigurations)
             }
-            val cb = callback ?: return
-            val activeConfigs = runCatching { audioManager.activePlaybackConfigurations }.getOrNull() ?: emptyList()
-            update(activeConfigs)
-            runCatching { audioManager.registerAudioPlaybackCallback(cb, null) }
         }
     }
 
     fun stop() {
-        if (Build.VERSION.SDK_INT >= 26 && audioManager != null) {
-            val cb = callback ?: return
-            runCatching { audioManager.unregisterAudioPlaybackCallback(cb) }
-            callback = null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && callback != null) {
+            runCatching {
+                audioManager.unregisterAudioPlaybackCallback(callback)
+            }
         }
     }
 
-    private fun update(configs: List<AudioPlaybackConfiguration>) {
-        if (Build.VERSION.SDK_INT < 26) return
-        val list = configs.mapNotNull { cfg ->
-            val sessionId = getAudioSessionIdReflection(cfg)
+    private fun updateSessions(configs: List<AudioPlaybackConfiguration>?) {
+        if (configs == null) {
+            _sessions.value = emptyList()
+            return
+        }
+
+        val detectedList = mutableListOf<ActiveAudioSession>()
+        for (config in configs) {
+            val sessionId = extractAudioSessionId(config)
             if (sessionId > 0) {
-                val uid = getClientUidReflection(cfg)
-                PlaybackSession(
-                    packageName = packageForUid(uid),
-                    audioSessionId = sessionId,
-                    uid = uid
-                )
-            } else null
-        }.distinctBy { it.audioSessionId }
-        _sessions.value = list
+                detectedList.add(ActiveAudioSession(audioSessionId = sessionId))
+            }
+        }
+
+        _sessions.value = detectedList.distinctBy { it.audioSessionId }
     }
 
-    private fun getAudioSessionIdReflection(cfg: AudioPlaybackConfiguration): Int {
-        return runCatching {
-            val method = cfg.javaClass.methods.firstOrNull {
-                it.name == "getAudioSessionId" || it.name == "getClientAudioSessionId" || it.name == "getPlayerSessionId"
-            }
-            if (method != null) {
-                (method.invoke(cfg) as? Int) ?: 0
-            } else {
-                val field = cfg.javaClass.declaredFields.firstOrNull {
-                    it.name == "mPlayerSessionId" || it.name == "mAudioSessionId" || it.name == "mSessionId"
-                }
-                field?.isAccessible = true
-                (field?.get(cfg) as? Int) ?: 0
-            }
-        }.getOrDefault(0)
-    }
+    private fun extractAudioSessionId(config: AudioPlaybackConfiguration): Int {
+        // Método 1: Reflexión directa sobre getAudioSessionId()
+        runCatching {
+            val method = config.javaClass.getMethod("getAudioSessionId")
+            val id = method.invoke(config) as? Int
+            if (id != null && id > 0) return id
+        }
 
-    private fun getClientUidReflection(cfg: AudioPlaybackConfiguration): Int {
-        return runCatching {
-            val method = cfg.javaClass.methods.firstOrNull { it.name == "getClientUid" || it.name == "getUid" }
-            if (method != null) {
-                (method.invoke(cfg) as? Int) ?: -1
-            } else {
-                val field = cfg.javaClass.declaredFields.firstOrNull { it.name == "mClientUid" || it.name == "mUid" }
-                field?.isAccessible = true
-                (field?.get(cfg) as? Int) ?: -1
+        // Método 2: Extracción del dump de configuración en caso de bloqueo por el SO
+        runCatching {
+            val str = config.toString()
+            val regex = Regex("""session:\s*(\d+)""", RegexOption.IGNORE_CASE)
+            val match = regex.find(str)
+            if (match != null) {
+                val id = match.groupValues[1].toIntOrNull()
+                if (id != null && id > 0) return id
             }
-        }.getOrDefault(-1)
-    }
+        }
 
-    private fun packageForUid(uid: Int): String {
-        if (uid <= 0) return "Sesión Global"
-        val packages = appContext.packageManager.getPackagesForUid(uid)
-        return packages?.firstOrNull() ?: "UID $uid"
+        return -1
     }
 }
