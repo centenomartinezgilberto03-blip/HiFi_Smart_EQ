@@ -24,7 +24,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var monitor: AudioPlaybackMonitor
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate()
+        super.onCreate(savedInstanceState)
 
         val serviceIntent = Intent(this, HifiEqService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

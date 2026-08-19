@@ -1,7 +1,6 @@
 package com.gilbertcenteno.hifismarteq.audio
 
 import android.content.Context
-import android.media.AudioManager
 import android.media.audiofx.DynamicsProcessing
 import android.media.audiofx.Virtualizer
 import android.os.Build
@@ -12,15 +11,6 @@ object DynamicsProcessingEngine {
     private val activeVirtualizers = mutableMapOf<Int, Virtualizer>()
 
     fun checkSpatialAudioSupport(context: Context): Boolean {
-        if (Build.VERSION.SDK_INT >= 33) {
-            val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-            if (am != null) {
-                runCatching {
-                    val spatializer = am.spatializer
-                    if (spatializer.isFeatureSupported) return true
-                }
-            }
-        }
         return runCatching {
             val virt = Virtualizer(0, 0)
             val supported = virt.strengthSupported
@@ -101,15 +91,16 @@ object DynamicsProcessingEngine {
                 runCatching {
                     dp.enabled = enabled
                     if (enabled) {
-                        dp.setPreEqAllChannelsTo(
-                            DynamicsProcessing.Eq(true, true, bandCenterFreqsHz.size).apply {
-                                for (i in bandCenterFreqsHz.indices) {
-                                    val band = getBand(i)
-                                    band.bandwidth = 1f
-                                    band.gain = preampDb + bandGainsDb.getOrElse(i) { 0f }
-                                }
-                            }
-                        )
+                        val eq = DynamicsProcessing.Eq(true, true, bandCenterFreqsHz.size)
+                        for (i in bandCenterFreqsHz.indices) {
+                            val eqBand = DynamicsProcessing.EqBand(
+                                true,
+                                bandCenterFreqsHz[i],
+                                preampDb + bandGainsDb.getOrElse(i) { 0f }
+                            )
+                            eq.setBand(i, eqBand)
+                        }
+                        dp.setPreEqAllChannelsTo(eq)
                     }
                 }
             }

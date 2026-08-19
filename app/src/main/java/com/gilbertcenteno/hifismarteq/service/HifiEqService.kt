@@ -34,15 +34,12 @@ class HifiEqService : Service() {
             val sessionId = intent.getIntExtra(AudioEffect.EXTRA_AUDIO_SESSION, -1)
             if (sessionId <= 0) return
 
-            when (action) {
-                AudioEffect.ACTION_OPEN_AUDIO_EFFECT_SESSION -> {
-                    broadcastSessions.add(sessionId)
-                    updateEngineSessions()
-                }
-                AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_SESSION -> {
-                    broadcastSessions.remove(sessionId)
-                    updateEngineSessions()
-                }
+            if (action == AudioEffect.ACTION_OPEN_AUDIO_EFFECT_SESSION) {
+                broadcastSessions.add(sessionId)
+                updateEngineSessions()
+            } else if (action == AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_SESSION) {
+                broadcastSessions.remove(sessionId)
+                updateEngineSessions()
             }
         }
     }
