@@ -182,7 +182,7 @@ fun MainScreen(
                         modifier = Modifier.padding(end = 8.dp)
                     )
                 }
-            }
+            )
         }
     ) { paddingValues ->
         LazyColumn(
@@ -221,7 +221,7 @@ fun MainScreen(
                             textAlign = TextAlign.Center
                         )
                         Text(
-                            text = "Desliza horizontalmente para ver todas las bandas →",
+                            text = "Desliza horizontalmente para ver todas las bandas",
                             style = MaterialTheme.typography.bodySmall,
                             textAlign = TextAlign.Center
                         )
@@ -274,15 +274,6 @@ fun MainScreen(
                                 enabled = isEditing
                             )
                             Text("Activado")
-                        }
-                        if (state.compressor.enabled) {
-                            Text("Threshold: ${state.compressor.thresholdDb} dB")
-                            Slider(
-                                value = state.compressor.thresholdDb,
-                                onValueChange = { onCompressorChange(state.compressor.copy(thresholdDb = it)) },
-                                valueRange = -60f..0f,
-                                enabled = isEditing
-                            )
                         }
                     }
                 }
@@ -345,7 +336,6 @@ fun MainScreen(
         }
     }
 
-    // Diálogo para guardar
     if (showSaveDialog) {
         AlertDialog(
             onDismissRequest = onShowSaveDialog,
@@ -366,7 +356,6 @@ fun MainScreen(
         )
     }
 
-    // Diálogo para cargar
     if (showLoadDialog) {
         AlertDialog(
             onDismissRequest = onShowLoadDialog,
