@@ -8,7 +8,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.media.audiofx.AudioEffect
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
@@ -24,6 +23,12 @@ import kotlinx.coroutines.launch
 
 class HifiEqService : Service() {
 
+    companion object {
+        private const val ACTION_OPEN_AUDIO_EFFECT_SESSION = "android.media.action.OPEN_AUDIO_EFFECT_SESSION"
+        private const val ACTION_CLOSE_AUDIO_EFFECT_SESSION = "android.media.action.CLOSE_AUDIO_EFFECT_SESSION"
+        private const val EXTRA_AUDIO_SESSION = "android.media.extra.AUDIO_SESSION"
+    }
+
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private lateinit var monitor: AudioPlaybackMonitor
     private val broadcastSessions = mutableSetOf<Int>()
@@ -31,13 +36,13 @@ class HifiEqService : Service() {
     private val audioSessionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val action = intent?.action ?: return
-            val sessionId = intent.getIntExtra(AudioEffect.EXTRA_AUDIO_SESSION, -1)
+            val sessionId = intent.getIntExtra(EXTRA_AUDIO_SESSION, -1)
             if (sessionId <= 0) return
 
-            if (action == AudioEffect.ACTION_OPEN_AUDIO_EFFECT_SESSION) {
+            if (action == ACTION_OPEN_AUDIO_EFFECT_SESSION) {
                 broadcastSessions.add(sessionId)
                 updateEngineSessions()
-            } else if (action == AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_SESSION) {
+            } else if (action == ACTION_CLOSE_AUDIO_EFFECT_SESSION) {
                 broadcastSessions.remove(sessionId)
                 updateEngineSessions()
             }
@@ -55,10 +60,15 @@ class HifiEqService : Service() {
         EqRepository.setSpatialAudioSupported(spatialSupported)
 
         val filter = IntentFilter().apply {
-            addAction(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_SESSION)
-            addAction(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_SESSION)
+            addAction(ACTION_OPEN_AUDIO_EFFECT_SESSION)
+            addAction(ACTION_CLOSE_AUDIO_EFFECT_SESSION)
         }
-        registerReceiver(audioSessionReceiver, filter)
+        
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(audioSessionReceiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            registerReceiver(audioSessionReceiver, filter)
+        }
 
         serviceScope.launch {
             monitor.sessions.collectLatest {
