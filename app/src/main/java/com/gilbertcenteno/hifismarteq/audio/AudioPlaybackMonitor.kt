@@ -68,6 +68,14 @@ class AudioPlaybackMonitor(context: Context) {
         }.getOrDefault(-1)
     }
 
+    fun addBroadcastSession(sessionId: Int, pkg: String) {
+        addSession(sessionId)
+    }
+
+    fun removeBroadcastSession(sessionId: Int) {
+        removeSession(sessionId)
+    }
+
     fun addSession(sessionId: Int) {
         if (sessionId <= 0) return
         val current = _sessions.value.toMutableList()
@@ -82,3 +90,4 @@ class AudioPlaybackMonitor(context: Context) {
         _sessions.value = _sessions.value.filter { it.audioSessionId != sessionId }
     }
 }
+

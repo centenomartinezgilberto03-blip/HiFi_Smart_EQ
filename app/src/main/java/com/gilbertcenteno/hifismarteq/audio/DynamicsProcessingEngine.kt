@@ -69,7 +69,14 @@ object DynamicsProcessingEngine {
         return runCatching {
             val builder = DynamicsProcessing.Config.Builder(
                 DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
-                1, false, 0, true, 10, false, 0, true
+                2,      // channel count
+                true,   // preEq enabled
+                10,     // preEq bands
+                false,  // mbc enabled
+                1,      // mbc bands
+                false,  // postEq enabled
+                1,      // postEq bands
+                true    // limiter enabled
             )
             val config = builder.build()
             val dp = DynamicsProcessing(0, sessionId, config)
@@ -180,3 +187,4 @@ object DynamicsProcessingEngine {
         activeVirtualizers.clear()
     }
 }
+
