@@ -63,7 +63,7 @@ class MainActivity : ComponentActivity() {
         profileManager = ProfileManager(this)
 
         setContent {
-            var isDarkMode by remember { mutableStateOf(isSystemInDarkTheme()) }
+            var isDarkMode by remember { mutableStateOf(false) }
             
             MaterialTheme(
                 colorScheme = if (isDarkMode) darkColorScheme() else lightColorScheme()
@@ -471,3 +471,4 @@ fun ScrollableEqualizer(
         }
     }
 }
+
