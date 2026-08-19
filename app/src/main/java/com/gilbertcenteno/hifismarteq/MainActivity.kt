@@ -583,3 +583,4 @@ fun BigVerticalEqualizer(
         }
     }
 }
+
