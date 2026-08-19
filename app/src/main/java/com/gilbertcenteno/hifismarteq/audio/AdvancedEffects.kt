@@ -25,9 +25,19 @@ class AdvancedEffects {
             }
             
             if (Build.VERSION.SDK_INT >= 28) {
-                dynamicsProcessing = DynamicsProcessing(0, sessionId).apply {
-                    enabled = true
-                }
+                val config = DynamicsProcessing.Config.Builder(
+                    DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
+                    2,
+                    true,
+                    10,
+                    false,
+                    1,
+                    false,
+                    1,
+                    true
+                ).build()
+                dynamicsProcessing = DynamicsProcessing(0, sessionId, config)
+                dynamicsProcessing?.enabled = true
             }
             true
         } catch (e: Exception) {
@@ -50,11 +60,7 @@ class AdvancedEffects {
         // Usando DynamicsProcessing para widening
         if (Build.VERSION.SDK_INT >= 28) {
             dynamicsProcessing?.let { dp ->
-                val config = DynamicsProcessing.Config.Builder(
-                    DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
-                    2, true, 10, false, 1, false, 1, true
-                ).build()
-                dp.updateConfig(config)
+                dp.enabled = true
             }
         }
     }
