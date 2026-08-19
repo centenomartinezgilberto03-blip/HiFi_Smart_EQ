@@ -15,7 +15,6 @@ import androidx.core.app.NotificationCompat
 import com.gilbertcenteno.hifismarteq.audio.AudioPlaybackMonitor
 import com.gilbertcenteno.hifismarteq.audio.DynamicsProcessingEngine
 import com.gilbertcenteno.hifismarteq.audio.EqRepository
-import com.gilbertcenteno.hifismarteq.audio.PlaybackSession
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -55,6 +54,9 @@ class HifiEqService : Service() {
         monitor = AudioPlaybackMonitor(this)
         monitor.start()
 
+        val spatialSupported = DynamicsProcessingEngine.checkSpatialAudioSupport(this)
+        EqRepository.setSpatialAudioSupported(spatialSupported)
+
         val filter = IntentFilter().apply {
             addAction(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_SESSION)
             addAction(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_SESSION)
@@ -75,7 +77,9 @@ class HifiEqService : Service() {
                     enabled = state.isEnabled,
                     preampDb = state.preampGainDb,
                     bandCenterFreqsHz = freq,
-                    bandGainsDb = gains
+                    bandGainsDb = gains,
+                    spatialAudioEnabled = state.isSpatialAudioEnabled,
+                    spatialStrength = state.spatialStrength
                 )
             }
         }
@@ -88,7 +92,7 @@ class HifiEqService : Service() {
         val targetSessions = if (allSessions.isNotEmpty()) {
             allSessions
         } else {
-            listOf(0) // Fallback a sesión global si no detecta activas
+            listOf(0)
         }
 
         DynamicsProcessingEngine.attachToSessions(this, targetSessions)
@@ -98,7 +102,9 @@ class HifiEqService : Service() {
             enabled = state.isEnabled,
             preampDb = state.preampGainDb,
             bandCenterFreqsHz = EqRepository.FREQUENCIES,
-            bandGainsDb = state.bandGains.toFloatArray()
+            bandGainsDb = state.bandGains.toFloatArray(),
+            spatialAudioEnabled = state.isSpatialAudioEnabled,
+            spatialStrength = state.spatialStrength
         )
     }
 

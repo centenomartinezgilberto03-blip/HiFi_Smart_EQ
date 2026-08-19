@@ -1,0 +1,143 @@
+package com.gilbertcenteno.hifismarteq.audio
+
+import android.content.Context
+import android.media.AudioManager
+import android.media.audiofx.DynamicsProcessing
+import android.media.audiofx.Virtualizer
+import android.os.Build
+
+object DynamicsProcessingEngine {
+
+    private val activeEngines = mutableMapOf<Int, DynamicsProcessing>()
+    private val activeVirtualizers = mutableMapOf<Int, Virtualizer>()
+
+    fun checkSpatialAudioSupport(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT >= 33) {
+            val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            if (am != null) {
+                runCatching {
+                    val spatializer = am.spatializer
+                    if (spatializer.isFeatureSupported) return true
+                }
+            }
+        }
+        return runCatching {
+            val virt = Virtualizer(0, 0)
+            val supported = virt.strengthSupported
+            virt.release()
+            supported
+        }.getOrDefault(false)
+    }
+
+    fun attachToSessions(context: Context, sessionIds: List<Int>) {
+        val currentSessions = sessionIds.toSet()
+
+        val engineIter = activeEngines.iterator()
+        while (engineIter.hasNext()) {
+            val (id, dp) = engineIter.next()
+            if (!currentSessions.contains(id)) {
+                runCatching { dp.enabled = false; dp.release() }
+                engineIter.remove()
+            }
+        }
+
+        val virtIter = activeVirtualizers.iterator()
+        while (virtIter.hasNext()) {
+            val (id, virt) = virtIter.next()
+            if (!currentSessions.contains(id)) {
+                runCatching { virt.enabled = false; virt.release() }
+                virtIter.remove()
+            }
+        }
+
+        for (id in sessionIds) {
+            if (!activeEngines.containsKey(id)) {
+                val dp = createEngine(id)
+                if (dp != null) activeEngines[id] = dp
+            }
+            if (!activeVirtualizers.containsKey(id)) {
+                val virt = createVirtualizer(id)
+                if (virt != null) activeVirtualizers[id] = virt
+            }
+        }
+    }
+
+    private fun createEngine(sessionId: Int): DynamicsProcessing? {
+        if (Build.VERSION.SDK_INT < 28) return null
+        return runCatching {
+            val builder = DynamicsProcessing.Config.Builder(
+                DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
+                1,
+                false, 0,
+                true, 10,
+                false, 0,
+                true
+            )
+            val config = builder.build()
+            val dp = DynamicsProcessing(0, sessionId, config)
+            dp.enabled = true
+            dp
+        }.getOrNull()
+    }
+
+    private fun createVirtualizer(sessionId: Int): Virtualizer? {
+        return runCatching {
+            val virt = Virtualizer(0, sessionId)
+            virt.enabled = false
+            virt
+        }.getOrNull()
+    }
+
+    fun applySettings(
+        enabled: Boolean,
+        preampDb: Float,
+        bandCenterFreqsHz: FloatArray,
+        bandGainsDb: FloatArray,
+        spatialAudioEnabled: Boolean,
+        spatialStrength: Short
+    ) {
+        if (Build.VERSION.SDK_INT >= 28) {
+            for ((_, dp) in activeEngines) {
+                runCatching {
+                    dp.enabled = enabled
+                    if (enabled) {
+                        dp.setPreEqAllChannelsTo(
+                            DynamicsProcessing.Eq(true, true, bandCenterFreqsHz.size).apply {
+                                for (i in bandCenterFreqsHz.indices) {
+                                    val band = getBand(i)
+                                    band.bandwidth = 1f
+                                    band.gain = preampDb + bandGainsDb.getOrElse(i) { 0f }
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        for ((_, virt) in activeVirtualizers) {
+            runCatching {
+                if (spatialAudioEnabled && enabled) {
+                    virt.enabled = true
+                    if (virt.strengthSupported) {
+                        virt.setStrength(spatialStrength)
+                    }
+                } else {
+                    virt.enabled = false
+                }
+            }
+        }
+    }
+
+    fun release() {
+        for ((_, dp) in activeEngines) {
+            runCatching { dp.enabled = false; dp.release() }
+        }
+        activeEngines.clear()
+
+        for ((_, virt) in activeVirtualizers) {
+            runCatching { virt.enabled = false; virt.release() }
+        }
+        activeVirtualizers.clear()
+    }
+}
