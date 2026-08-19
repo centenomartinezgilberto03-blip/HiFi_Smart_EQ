@@ -27,25 +27,26 @@ class HifiEqService : Service() {
         private const val ACTION_OPEN_AUDIO_EFFECT_SESSION = "android.media.action.OPEN_AUDIO_EFFECT_SESSION"
         private const val ACTION_CLOSE_AUDIO_EFFECT_SESSION = "android.media.action.CLOSE_AUDIO_EFFECT_SESSION"
         private const val EXTRA_AUDIO_SESSION = "android.media.extra.AUDIO_SESSION"
+        private const val EXTRA_PACKAGE_NAME = "android.media.extra.PACKAGE_NAME"
     }
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private lateinit var monitor: AudioPlaybackMonitor
-    private val broadcastSessions = mutableSetOf<Int>()
 
     private val audioSessionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val action = intent?.action ?: return
             val sessionId = intent.getIntExtra(EXTRA_AUDIO_SESSION, -1)
+            val pkg = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: "Reproductor de Audio"
+
             if (sessionId <= 0) return
 
             if (action == ACTION_OPEN_AUDIO_EFFECT_SESSION) {
-                broadcastSessions.add(sessionId)
-                updateEngineSessions()
+                monitor.addBroadcastSession(sessionId, pkg)
             } else if (action == ACTION_CLOSE_AUDIO_EFFECT_SESSION) {
-                broadcastSessions.remove(sessionId)
-                updateEngineSessions()
+                monitor.removeBroadcastSession(sessionId)
             }
+            updateEngineSessions()
         }
     }
 
@@ -56,14 +57,11 @@ class HifiEqService : Service() {
         monitor = AudioPlaybackMonitor(this)
         monitor.start()
 
-        val spatialSupported = DynamicsProcessingEngine.checkSpatialAudioSupport(this)
-        EqRepository.setSpatialAudioSupported(spatialSupported)
-
         val filter = IntentFilter().apply {
             addAction(ACTION_OPEN_AUDIO_EFFECT_SESSION)
             addAction(ACTION_CLOSE_AUDIO_EFFECT_SESSION)
         }
-        
+
         if (Build.VERSION.SDK_INT >= 33) {
             registerReceiver(audioSessionReceiver, filter, Context.RECEIVER_EXPORTED)
         } else {
@@ -93,16 +91,8 @@ class HifiEqService : Service() {
     }
 
     private fun updateEngineSessions() {
-        val monitorList = monitor.sessions.value.map { it.audioSessionId }
-        val allSessions = (monitorList + broadcastSessions).filter { it > 0 }.distinct()
-
-        val targetSessions = if (allSessions.isNotEmpty()) {
-            allSessions
-        } else {
-            listOf(0)
-        }
-
-        DynamicsProcessingEngine.attachToSessions(this, targetSessions)
+        val detectedList = monitor.sessions.value.map { it.audioSessionId }
+        DynamicsProcessingEngine.attachToSessions(this, detectedList)
 
         val state = EqRepository.state.value
         DynamicsProcessingEngine.applySettings(

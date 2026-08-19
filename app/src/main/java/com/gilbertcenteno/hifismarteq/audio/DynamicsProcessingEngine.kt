@@ -1,43 +1,24 @@
 package com.gilbertcenteno.hifismarteq.audio
 
 import android.content.Context
-import android.media.audiofx.Equalizer
-import android.media.audiofx.LoudnessEnhancer
-import android.media.audiofx.Virtualizer
 import android.media.audiofx.DynamicsProcessing
+import android.media.audiofx.Virtualizer
 import android.os.Build
 
 object DynamicsProcessingEngine {
-
-    private var fallbackEq: Equalizer? = null
-    private var fallbackLoudness: LoudnessEnhancer? = null
-    private var fallbackVirtualizer: Virtualizer? = null
 
     private val activeEngines = mutableMapOf<Int, DynamicsProcessing>()
     private val activeVirtualizers = mutableMapOf<Int, Virtualizer>()
 
     fun checkSpatialAudioSupport(context: Context): Boolean = true
 
-    private fun ensureFallbackEffects() {
-        if (fallbackEq == null) {
-            runCatching { fallbackEq = Equalizer(0, 0).apply { enabled = true } }
-        }
-        if (fallbackLoudness == null) {
-            runCatching { fallbackLoudness = LoudnessEnhancer(0).apply { enabled = true } }
-        }
-        if (fallbackVirtualizer == null) {
-            runCatching { fallbackVirtualizer = Virtualizer(0, 0).apply { enabled = false } }
-        }
-    }
-
     fun attachToSessions(context: Context, sessionIds: List<Int>) {
-        ensureFallbackEffects()
-        val currentSessions = sessionIds.filter { it > 0 }.toSet()
+        val validSessions = sessionIds.filter { it > 0 }.toSet()
 
         val engineIter = activeEngines.iterator()
         while (engineIter.hasNext()) {
             val (id, dp) = engineIter.next()
-            if (!currentSessions.contains(id)) {
+            if (!validSessions.contains(id)) {
                 runCatching { dp.enabled = false; dp.release() }
                 engineIter.remove()
             }
@@ -46,13 +27,13 @@ object DynamicsProcessingEngine {
         val virtIter = activeVirtualizers.iterator()
         while (virtIter.hasNext()) {
             val (id, virt) = virtIter.next()
-            if (!currentSessions.contains(id)) {
+            if (!validSessions.contains(id)) {
                 runCatching { virt.enabled = false; virt.release() }
                 virtIter.remove()
             }
         }
 
-        for (id in currentSessions) {
+        for (id in validSessions) {
             if (!activeEngines.containsKey(id)) {
                 val dp = createEngine(id)
                 if (dp != null) activeEngines[id] = dp
@@ -76,7 +57,7 @@ object DynamicsProcessingEngine {
                 true
             )
             val config = builder.build()
-            val dp = DynamicsProcessing(1000, sessionId, config)
+            val dp = DynamicsProcessing(10000, sessionId, config)
             dp.enabled = true
             dp
         }.getOrNull()
@@ -84,7 +65,7 @@ object DynamicsProcessingEngine {
 
     private fun createVirtualizer(sessionId: Int): Virtualizer? {
         return runCatching {
-            val virt = Virtualizer(1000, sessionId)
+            val virt = Virtualizer(10000, sessionId)
             virt.enabled = false
             virt
         }.getOrNull()
@@ -98,39 +79,6 @@ object DynamicsProcessingEngine {
         spatialAudioEnabled: Boolean,
         spatialStrength: Short
     ) {
-        ensureFallbackEffects()
-
-        // 1. Aplicar a la sesión global (0) como respaldo
-        runCatching {
-            fallbackEq?.enabled = enabled
-            if (enabled && fallbackEq != null) {
-                val numBands = fallbackEq!!.numberOfBands
-                for (i in 0 until numBands) {
-                    val gain = bandGainsDb.getOrElse(i) { 0f }
-                    val levelmB = (gain * 100).toInt().coerceIn(-1500, 1500)
-                    fallbackEq!!.setBandLevel(i.toShort(), levelmB.toShort())
-                }
-            }
-        }
-
-        runCatching {
-            fallbackLoudness?.enabled = enabled
-            if (enabled && fallbackLoudness != null) {
-                val gainmB = (preampDb * 100).toInt().coerceIn(0, 2000)
-                fallbackLoudness!!.setTargetGain(gainmB)
-            }
-        }
-
-        runCatching {
-            if (fallbackVirtualizer != null) {
-                fallbackVirtualizer!!.enabled = spatialAudioEnabled && enabled
-                if (spatialAudioEnabled && enabled && fallbackVirtualizer!!.strengthSupported) {
-                    fallbackVirtualizer!!.setStrength(spatialStrength)
-                }
-            }
-        }
-
-        // 2. Aplicar a las sesiones activas detectadas (> 0)
         if (Build.VERSION.SDK_INT >= 28) {
             for ((_, dp) in activeEngines) {
                 runCatching {
@@ -166,13 +114,6 @@ object DynamicsProcessingEngine {
     }
 
     fun release() {
-        runCatching { fallbackEq?.release() }
-        runCatching { fallbackLoudness?.release() }
-        runCatching { fallbackVirtualizer?.release() }
-        fallbackEq = null
-        fallbackLoudness = null
-        fallbackVirtualizer = null
-
         for ((_, dp) in activeEngines) {
             runCatching { dp.enabled = false; dp.release() }
         }
