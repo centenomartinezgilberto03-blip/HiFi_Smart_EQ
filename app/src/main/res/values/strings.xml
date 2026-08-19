@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">HiFi Smart EQ</string>
+    <string name="created_by">Creado por Gilbert Centeno</string>
+    <string name="media_listener_name">HiFi Smart EQ Media Listener</string>
+</resources>
