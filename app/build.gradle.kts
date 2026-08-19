@@ -19,6 +19,15 @@ android {
 
     buildFeatures { compose = true }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("../hifi-smart-eq.jks")
+            storePassword = "hifi2024secure"
+            keyAlias = "hifismarteq"
+            keyPassword = "hifi2024secure"
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -43,3 +52,5 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     testImplementation("junit:junit:4.13.2")
 }
+
+

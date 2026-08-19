@@ -11,7 +11,8 @@ data class EqState(
     val bandGains: List<Float> = List(10) { 0f },
     val isSpatialAudioEnabled: Boolean = false,
     val spatialAudioSupported: Boolean = false,
-    val spatialStrength: Short = 1000
+    val spatialStrength: Short = 500,
+    val bassBoostPercent: Int = 0
 )
 
 object EqRepository {
@@ -48,5 +49,20 @@ object EqRepository {
 
     fun setSpatialStrength(strength: Short) {
         _state.update { it.copy(spatialStrength = strength) }
+    }
+
+    fun setBassBoost(percent: Int) {
+        _state.update { it.copy(bassBoostPercent = percent.coerceIn(0, 100)) }
+    }
+
+    fun applyPreset(gains: List<Float>, preamp: Float, spatial: Short, bass: Int) {
+        _state.update {
+            it.copy(
+                preampGainDb = preamp,
+                bandGains = gains.toList(),
+                spatialStrength = spatial,
+                bassBoostPercent = bass
+            )
+        }
     }
 }

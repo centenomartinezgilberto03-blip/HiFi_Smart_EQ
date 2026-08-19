@@ -30,7 +30,7 @@ jobs:
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: HiFi-Smart-EQ-Debug-APK
+          name: HiFi-Smart-EQ-PowerAmp-Edition
           path: app/build/outputs/apk/debug/*.apk
           
       - name: Run Unit Tests
