@@ -8,16 +8,17 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.gilbertcenteno.hifismarteq.audio.AudioPlaybackMonitor
 import com.gilbertcenteno.hifismarteq.audio.EqRepository
 import com.gilbertcenteno.hifismarteq.audio.EqState
+import com.gilbertcenteno.hifismarteq.model.Preset
 import com.gilbertcenteno.hifismarteq.model.PresetLibrary
 import com.gilbertcenteno.hifismarteq.profile.ProfileManager
 import com.gilbertcenteno.hifismarteq.service.HifiEqService
@@ -61,6 +62,7 @@ class MainActivity : ComponentActivity() {
                         bassBoost = bassBoost,
                         spatialStrength = spatialStrength,
                         customProfileName = customProfileName,
+                        profileManager = profileManager,
                         onPresetSelected = { preset ->
                             selectedPreset = preset.name
                             preset.bandGains.forEachIndexed { index, gain ->
@@ -91,6 +93,9 @@ class MainActivity : ComponentActivity() {
                                     EqRepository.setBandGain(index, gain)
                                 }
                             }
+                        },
+                        onDeleteProfile = { name ->
+                            profileManager.deleteProfile(name)
                         },
                         onBassBoostChange = { bassBoost = it },
                         onSpatialStrengthChange = { spatialStrength = it },
@@ -123,10 +128,12 @@ fun MainScreen(
     bassBoost: Int,
     spatialStrength: Int,
     customProfileName: String,
-    onPresetSelected: (com.gilbertcenteno.hifismarteq.model.Preset) -> Unit,
+    profileManager: ProfileManager,
+    onPresetSelected: (Preset) -> Unit,
     onCustomProfileNameChange: (String) -> Unit,
     onSaveProfile: () -> Unit,
     onLoadProfile: (String) -> Unit,
+    onDeleteProfile: (String) -> Unit,
     onBassBoostChange: (Int) -> Unit,
     onSpatialStrengthChange: (Int) -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
@@ -141,7 +148,7 @@ fun MainScreen(
 
     LaunchedEffect(Unit) {
         profiles.clear()
-        profiles.addAll(ProfileManager(androidx.compose.ui.platform.LocalContext.current).getAllProfiles())
+        profiles.addAll(profileManager.getAllProfiles())
     }
 
     Scaffold(
@@ -198,7 +205,7 @@ fun MainScreen(
                                         Text(profile)
                                     }
                                     TextButton(onClick = {
-                                        ProfileManager(androidx.compose.ui.platform.LocalContext.current).deleteProfile(profile)
+                                        onDeleteProfile(profile)
                                         profiles.remove(profile)
                                     }) {
                                         Text("Eliminar", color = MaterialTheme.colorScheme.error)
