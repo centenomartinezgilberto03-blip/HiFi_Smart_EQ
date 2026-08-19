@@ -20,25 +20,29 @@ class AudioPlaybackMonitor(context: Context) {
     private val _sessions = MutableStateFlow<List<PlaybackSession>>(emptyList())
     val sessions: StateFlow<List<PlaybackSession>> = _sessions.asStateFlow()
 
-    private val callback: AudioManager.AudioPlaybackCallback? = if (Build.VERSION.SDK_INT >= 26) {
-        object : AudioManager.AudioPlaybackCallback() {
-            override fun onPlaybackConfigChanged(configs: List<AudioPlaybackConfiguration>) {
-                update(configs)
-            }
-        }
-    } else null
+    private var callback: AudioManager.AudioPlaybackCallback? = null
 
     fun start() {
-        if (Build.VERSION.SDK_INT >= 26 && callback != null && audioManager != null) {
+        if (Build.VERSION.SDK_INT >= 26 && audioManager != null) {
+            if (callback == null) {
+                callback = object : AudioManager.AudioPlaybackCallback() {
+                    override fun onPlaybackConfigChanged(configs: List<AudioPlaybackConfiguration>) {
+                        update(configs)
+                    }
+                }
+            }
+            val cb = callback ?: return
             val activeConfigs = runCatching { audioManager.activePlaybackConfigurations }.getOrNull() ?: emptyList()
             update(activeConfigs)
-            audioManager.registerAudioPlaybackCallback(callback, null)
+            runCatching { audioManager.registerAudioPlaybackCallback(cb, null) }
         }
     }
 
     fun stop() {
-        if (Build.VERSION.SDK_INT >= 26 && callback != null && audioManager != null) {
-            runCatching { audioManager.unregisterAudioPlaybackCallback(callback) }
+        if (Build.VERSION.SDK_INT >= 26 && audioManager != null) {
+            val cb = callback ?: return
+            runCatching { audioManager.unregisterAudioPlaybackCallback(cb) }
+            callback = null
         }
     }
 
@@ -60,13 +64,13 @@ class AudioPlaybackMonitor(context: Context) {
 
     private fun getAudioSessionIdReflection(cfg: AudioPlaybackConfiguration): Int {
         return runCatching {
-            val method = cfg.javaClass.methods.firstOrNull { 
+            val method = cfg.javaClass.methods.firstOrNull {
                 it.name == "getAudioSessionId" || it.name == "getClientAudioSessionId" || it.name == "getPlayerSessionId"
             }
             if (method != null) {
                 (method.invoke(cfg) as? Int) ?: 0
             } else {
-                val field = cfg.javaClass.declaredFields.firstOrNull { 
+                val field = cfg.javaClass.declaredFields.firstOrNull {
                     it.name == "mPlayerSessionId" || it.name == "mAudioSessionId" || it.name == "mSessionId"
                 }
                 field?.isAccessible = true
