@@ -1,80 +1,84 @@
 package com.gilbertcenteno.hifismarteq.audio
 
-import android.content.ComponentName
 import android.content.Context
-import android.media.session.MediaController
-import android.media.session.MediaSessionManager
-import com.gilbertcenteno.hifismarteq.service.HiFiNotificationListener
+import android.media.AudioManager
+import android.media.AudioPlaybackConfiguration
+import android.os.Build
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 data class ActiveAudioSession(
-    val audioSessionId: Int,
-    val packageName: String
+    val audioSessionId: Int
 )
 
-class AudioPlaybackMonitor(private val context: Context) {
+class AudioPlaybackMonitor(context: Context) {
 
-    private val mediaSessionManager =
-        context.getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val _sessions = MutableStateFlow<List<ActiveAudioSession>>(emptyList())
     val sessions: StateFlow<List<ActiveAudioSession>> = _sessions.asStateFlow()
 
-    private val sessionListener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
-        processControllers(controllers)
-    }
+    private val callback = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        object : AudioManager.AudioPlaybackCallback() {
+            override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>?) {
+                super.onPlaybackConfigChanged(configs)
+                updateFromConfigs(configs)
+            }
+        }
+    } else null
 
     fun start() {
-        runCatching {
-            val componentName = ComponentName(context, HiFiNotificationListener::class.java)
-            mediaSessionManager.addOnActiveSessionsChangedListener(sessionListener, componentName)
-            val initialControllers = mediaSessionManager.getActiveSessions(componentName)
-            processControllers(initialControllers)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && callback != null) {
+            runCatching {
+                audioManager.registerAudioPlaybackCallback(callback, null)
+                updateFromConfigs(audioManager.activePlaybackConfigurations)
+            }
         }
     }
 
     fun stop() {
-        runCatching {
-            mediaSessionManager.removeOnActiveSessionsChangedListener(sessionListener)
-        }
-    }
-
-    private fun processControllers(controllers: List<MediaController>?) {
-        if (controllers.isNullOrEmpty()) {
-            return
-        }
-        val detected = mutableListOf<ActiveAudioSession>()
-        for (controller in controllers) {
-            val pkg = controller.packageName ?: "App de Audio"
-            // Intentar extraer session ID del token de la sesion de medios
-            val sessionId = runCatching {
-                val token = controller.sessionToken
-                val method = token.javaClass.getMethod("getAudioSessionId")
-                method.invoke(token) as? Int
-            }.getOrNull() ?: -1
-
-            if (sessionId > 0) {
-                detected.add(ActiveAudioSession(sessionId, pkg))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && callback != null) {
+            runCatching {
+                audioManager.unregisterAudioPlaybackCallback(callback)
             }
         }
-        if (detected.isNotEmpty()) {
-            _sessions.value = detected.distinctBy { it.audioSessionId }
-        }
     }
 
-    fun addBroadcastSession(sessionId: Int, pkg: String = "Reproductor Multimedia") {
+    private fun updateFromConfigs(configs: List<AudioPlaybackConfiguration>?) {
+        if (configs.isNullOrEmpty()) {
+            _sessions.value = emptyList()
+            return
+        }
+
+        val detected = mutableListOf<ActiveAudioSession>()
+        for (config in configs) {
+            val sessionId = extractSessionId(config)
+            if (sessionId > 0) {
+                detected.add(ActiveAudioSession(sessionId))
+            }
+        }
+        _sessions.value = detected.distinctBy { it.audioSessionId }
+    }
+
+    private fun extractSessionId(config: AudioPlaybackConfiguration): Int {
+        return runCatching {
+            val method = config.javaClass.getMethod("getAudioSessionId")
+            val id = method.invoke(config) as? Int
+            if (id != null && id > 0) id else -1
+        }.getOrDefault(-1)
+    }
+
+    fun addSession(sessionId: Int) {
         if (sessionId <= 0) return
         val current = _sessions.value.toMutableList()
         if (current.none { it.audioSessionId == sessionId }) {
-            current.add(ActiveAudioSession(sessionId, pkg))
+            current.add(ActiveAudioSession(sessionId))
             _sessions.value = current
         }
     }
 
-    fun removeBroadcastSession(sessionId: Int) {
+    fun removeSession(sessionId: Int) {
         if (sessionId <= 0) return
-        val current = _sessions.value.filter { it.audioSessionId != sessionId }
-        _sessions.value = current
+        _sessions.value = _sessions.value.filter { it.audioSessionId != sessionId }
     }
 }

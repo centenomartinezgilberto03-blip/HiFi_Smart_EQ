@@ -1,18 +1,37 @@
 package com.gilbertcenteno.hifismarteq.audio
 
 import android.content.Context
-import android.media.audiofx.DynamicsProcessing
+import android.media.audiofx.Equalizer
+import android.media.audiofx.LoudnessEnhancer
 import android.media.audiofx.Virtualizer
+import android.media.audiofx.DynamicsProcessing
 import android.os.Build
 
 object DynamicsProcessingEngine {
+
+    private var globalEq: Equalizer? = null
+    private var globalLoudness: LoudnessEnhancer? = null
+    private var globalVirtualizer: Virtualizer? = null
 
     private val activeEngines = mutableMapOf<Int, DynamicsProcessing>()
     private val activeVirtualizers = mutableMapOf<Int, Virtualizer>()
 
     fun checkSpatialAudioSupport(context: Context): Boolean = true
 
+    private fun ensureGlobalEffects() {
+        if (globalEq == null) {
+            runCatching { globalEq = Equalizer(0, 0).apply { enabled = true } }
+        }
+        if (globalLoudness == null) {
+            runCatching { globalLoudness = LoudnessEnhancer(0).apply { enabled = true } }
+        }
+        if (globalVirtualizer == null) {
+            runCatching { globalVirtualizer = Virtualizer(0, 0).apply { enabled = false } }
+        }
+    }
+
     fun attachToSessions(context: Context, sessionIds: List<Int>) {
+        ensureGlobalEffects()
         val validSessions = sessionIds.filter { it > 0 }.toSet()
 
         val engineIter = activeEngines.iterator()
@@ -50,14 +69,10 @@ object DynamicsProcessingEngine {
         return runCatching {
             val builder = DynamicsProcessing.Config.Builder(
                 DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
-                1,
-                false, 0,
-                true, 10,
-                false, 0,
-                true
+                1, false, 0, true, 10, false, 0, true
             )
             val config = builder.build()
-            val dp = DynamicsProcessing(10000, sessionId, config)
+            val dp = DynamicsProcessing(0, sessionId, config)
             dp.enabled = true
             dp
         }.getOrNull()
@@ -65,7 +80,7 @@ object DynamicsProcessingEngine {
 
     private fun createVirtualizer(sessionId: Int): Virtualizer? {
         return runCatching {
-            val virt = Virtualizer(10000, sessionId)
+            val virt = Virtualizer(0, sessionId)
             virt.enabled = false
             virt
         }.getOrNull()
@@ -79,6 +94,39 @@ object DynamicsProcessingEngine {
         spatialAudioEnabled: Boolean,
         spatialStrength: Short
     ) {
+        ensureGlobalEffects()
+
+        // Ajustes globales
+        runCatching {
+            globalEq?.enabled = enabled
+            if (enabled && globalEq != null) {
+                val numBands = globalEq!!.numberOfBands
+                for (i in 0 until numBands) {
+                    val gain = bandGainsDb.getOrElse(i) { 0f }
+                    val levelmB = (gain * 100).toInt().coerceIn(-1500, 1500)
+                    globalEq!!.setBandLevel(i.toShort(), levelmB.toShort())
+                }
+            }
+        }
+
+        runCatching {
+            globalLoudness?.enabled = enabled
+            if (enabled && globalLoudness != null) {
+                val gainmB = (preampDb * 100).toInt().coerceIn(0, 2000)
+                globalLoudness!!.setTargetGain(gainmB)
+            }
+        }
+
+        runCatching {
+            if (globalVirtualizer != null) {
+                globalVirtualizer!!.enabled = spatialAudioEnabled && enabled
+                if (spatialAudioEnabled && enabled && globalVirtualizer!!.strengthSupported) {
+                    globalVirtualizer!!.setStrength(spatialStrength)
+                }
+            }
+        }
+
+        // Ajustes en sesiones individuales cuando existen
         if (Build.VERSION.SDK_INT >= 28) {
             for ((_, dp) in activeEngines) {
                 runCatching {
@@ -114,6 +162,13 @@ object DynamicsProcessingEngine {
     }
 
     fun release() {
+        runCatching { globalEq?.release() }
+        runCatching { globalLoudness?.release() }
+        runCatching { globalVirtualizer?.release() }
+        globalEq = null
+        globalLoudness = null
+        globalVirtualizer = null
+
         for ((_, dp) in activeEngines) {
             runCatching { dp.enabled = false; dp.release() }
         }
