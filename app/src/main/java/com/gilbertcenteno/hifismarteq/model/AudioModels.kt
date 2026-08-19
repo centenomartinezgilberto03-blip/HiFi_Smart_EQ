@@ -8,11 +8,53 @@ data class EqBand(
 )
 
 data class LimiterSettings(
-    val enabled: Boolean = true,
+    val enabled: Boolean = false,
     val thresholdDb: Float = -1f,
-    val postGainDb: Float = -0.5f,
+    val ceilingDb: Float = -0.5f,
+    val postGainDb: Float = 0f,
     val attackMs: Float = 5f,
     val releaseMs: Float = 80f
+)
+
+data class CompressorSettings(
+    val enabled: Boolean = false,
+    val thresholdDb: Float = -20f,
+    val ratio: Float = 4f,
+    val attackMs: Float = 10f,
+    val releaseMs: Float = 100f,
+    val kneeDb: Float = 6f,
+    val makeupGainDb: Float = 0f
+)
+
+data class StereoEnhanceSettings(
+    val balance: Float = 0f,
+    val stereoWidth: Float = 100f,
+    val monoEnabled: Boolean = false
+)
+
+data class ReverbSettings(
+    val enabled: Boolean = false,
+    val roomSize: Int = 50,
+    val wetDryMix: Float = 20f,
+    val decay: Float = 50f,
+    val preDelay: Float = 0f
+)
+
+data class BassTrebleSettings(
+    val bassEnabled: Boolean = false,
+    val bassGainDb: Float = 0f,
+    val bassFrequency: Float = 100f,
+    val trebleEnabled: Boolean = false,
+    val trebleGainDb: Float = 0f,
+    val trebleFrequency: Float = 5000f
+)
+
+data class MeteringData(
+    val peakLeft: Float = 0f,
+    val peakRight: Float = 0f,
+    val rmsLeft: Float = 0f,
+    val rmsRight: Float = 0f,
+    val clipping: Boolean = false
 )
 
 data class EqProfile(
