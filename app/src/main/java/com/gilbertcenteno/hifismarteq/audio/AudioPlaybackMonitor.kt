@@ -15,47 +15,57 @@ data class PlaybackSession(
 )
 
 class AudioPlaybackMonitor(context: Context) {
-    private val audioManager = context.getSystemService(AudioManager::class.java)
+    private val appContext = context.applicationContext
+    private val audioManager = appContext.getSystemService(AudioManager::class.java)
     private val _sessions = MutableStateFlow<List<PlaybackSession>>(emptyList())
     val sessions: StateFlow<List<PlaybackSession>> = _sessions.asStateFlow()
 
-    private val callback = object : AudioManager.AudioPlaybackCallback() {
-        override fun onPlaybackConfigChanged(configs: List<AudioPlaybackConfiguration>) {
-            update(configs)
+    private val callback = if (Build.VERSION.SDK_INT >= 26) {
+        object : AudioManager.AudioPlaybackCallback() {
+            override fun onPlaybackConfigChanged(configs: List<AudioPlaybackConfiguration>) {
+                update(configs)
+            }
+        }
+    } else null
+
+    fun start() {
+        if (Build.VERSION.SDK_INT >= 26 && callback != null) {
+            update(audioManager.activePlaybackConfigurations)
+            audioManager.registerAudioPlaybackCallback(callback, null)
         }
     }
 
-    fun start() {
-        if (Build.VERSION.SDK_INT < 26) return
-        update(audioManager.activePlaybackConfigurations)
-        audioManager.registerAudioPlaybackCallback(callback, null)
-    }
-
     fun stop() {
-        if (Build.VERSION.SDK_INT >= 26) {
+        if (Build.VERSION.SDK_INT >= 26 && callback != null) {
             runCatching { audioManager.unregisterAudioPlaybackCallback(callback) }
         }
     }
 
     private fun update(configs: List<AudioPlaybackConfiguration>) {
         if (Build.VERSION.SDK_INT < 26) return
-        val list = configs.filter {
-            it.playerState == AudioPlaybackConfiguration.PLAYER_STATE_STARTED &&
-            it.audioSessionId > 0
+        val list = configs.filter { cfg ->
+            cfg.audioSessionId > 0
         }.map { cfg ->
+            val uid = getClientUidReflection(cfg)
             PlaybackSession(
-                packageName = packageForUid(cfg.clientUid),
+                packageName = packageForUid(uid),
                 audioSessionId = cfg.audioSessionId,
-                uid = cfg.clientUid
+                uid = uid
             )
         }.distinctBy { it.audioSessionId }
         _sessions.value = list
     }
 
-    private fun packageForUid(uid: Int): String {
-        val packages = context.packageManager.getPackagesForUid(uid)
-        return packages?.firstOrNull() ?: "UID $uid"
+    private fun getClientUidReflection(cfg: AudioPlaybackConfiguration): Int {
+        return runCatching {
+            val method = cfg.javaClass.getMethod("getClientUid")
+            method.invoke(cfg) as Int
+        }.getOrDefault(-1)
     }
 
-    private val context: Context = context.applicationContext
+    private fun packageForUid(uid: Int): String {
+        if (uid <= 0) return "Sesión Global"
+        val packages = appContext.packageManager.getPackagesForUid(uid)
+        return packages?.firstOrNull() ?: "UID $uid"
+    }
 }

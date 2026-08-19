@@ -50,15 +50,17 @@ class HifiEqService : LifecycleService() {
         dsp.configure(DefaultBands.values, 0f, LimiterSettings())
         runCatching {
             bass?.release()
-            bass = BassBoost(0, sessionId)
-            bass?.strength = 0
-            bass?.enabled = true
+            bass = BassBoost(0, sessionId).apply {
+                setStrength(0.toShort())
+                enabled = true
+            }
         }
         runCatching {
             virtualizer?.release()
-            virtualizer = Virtualizer(0, sessionId)
-            virtualizer?.strength = 0
-            virtualizer?.enabled = true
+            virtualizer = Virtualizer(0, sessionId).apply {
+                setStrength(0.toShort())
+                enabled = true
+            }
         }
         analyzer.attach(sessionId)
         acquireTemporaryWakeLock()
@@ -74,7 +76,7 @@ class HifiEqService : LifecycleService() {
 
     private fun update(text: String) {
         getSystemService(NotificationManager::class.java)
-            .notify(NOTIFICATION_ID, notification(text))
+            ?.notify(NOTIFICATION_ID, notification(text))
     }
 
     private fun notification(text: String) =
@@ -88,7 +90,7 @@ class HifiEqService : LifecycleService() {
 
     private fun createChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
-            getSystemService(NotificationManager::class.java).createNotificationChannel(
+            getSystemService(NotificationManager::class.java)?.createNotificationChannel(
                 NotificationChannel(CHANNEL, "HiFi Smart EQ", NotificationManager.IMPORTANCE_LOW)
             )
         }

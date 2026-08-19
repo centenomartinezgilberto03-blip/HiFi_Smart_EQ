@@ -5,7 +5,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,7 +16,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -52,6 +53,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EqScreen(vm: EqViewModel, openListenerSettings: () -> Unit) {
     val bands by vm.bands.collectAsState()
@@ -70,9 +72,9 @@ private fun EqScreen(vm: EqViewModel, openListenerSettings: () -> Unit) {
                 Text("Procesamiento por sesión · APIs públicas de Android")
                 Spacer(Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(smart, { vm.setSmart(!smart) }, label = { Text("SMART") })
-                    FilterChip(!smart, { vm.setSmart(false) }, label = { Text("MANUAL") })
-                    Switch(enabled, vm::setEnabled)
+                    FilterChip(selected = smart, onClick = { vm.setSmart(!smart) }, label = { Text("SMART") })
+                    FilterChip(selected = !smart, onClick = { vm.setSmart(false) }, label = { Text("MANUAL") })
+                    Switch(checked = enabled, onCheckedChange = vm::setEnabled)
                 }
             }
             item {
@@ -90,14 +92,14 @@ private fun EqScreen(vm: EqViewModel, openListenerSettings: () -> Unit) {
                 }
             }
             item {
-                OutlinedButton(openListenerSettings) {
+                OutlinedButton(onClick = openListenerSettings) {
                     Text("Abrir acceso a Notification Listener")
                 }
             }
             item { EqGraph(bands) }
             item {
                 Text("Preamplificador: %.1f dB".format(preamp))
-                Slider(preamp, { preamp = it }, -12f..12f)
+                Slider(value = preamp, onValueChange = { preamp = it }, valueRange = -12f..12f)
             }
             item { Text("10 bandas", style = MaterialTheme.typography.titleLarge) }
             itemsIndexed(bands) { index, band ->
@@ -113,11 +115,11 @@ private fun BandCard(index: Int, band: com.gilbertcenteno.hifismarteq.model.EqBa
         Column(Modifier.padding(12.dp)) {
             Text("Banda ${index + 1}")
             Text("Frecuencia %.0f Hz".format(band.frequencyHz))
-            Slider(band.frequencyHz, { onChange(band.copy(frequencyHz = it)) }, 20f..20000f)
+            Slider(value = band.frequencyHz, onValueChange = { onChange(band.copy(frequencyHz = it)) }, valueRange = 20f..20000f)
             Text("Ganancia %.1f dB".format(band.gainDb))
-            Slider(band.gainDb, { onChange(band.copy(gainDb = it)) }, -12f..12f)
+            Slider(value = band.gainDb, onValueChange = { onChange(band.copy(gainDb = it)) }, valueRange = -12f..12f)
             Text("Q %.2f".format(band.q))
-            Slider(band.q, { onChange(band.copy(q = it)) }, 0.1f..10f)
+            Slider(value = band.q, onValueChange = { onChange(band.copy(q = it)) }, valueRange = 0.1f..10f)
         }
     }
 }
@@ -132,9 +134,9 @@ private fun EqGraph(bands: List<com.gilbertcenteno.hifismarteq.model.EqBand>) {
                 val x = i.toFloat() / sorted.lastIndex.coerceAtLeast(1) * size.width
                 val y = size.height / 2f - band.gainDb / 12f * size.height / 2f
                 if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                drawCircle(Offset(x, y), 5f)
+                drawCircle(color = Color.Cyan, radius = 5f, center = Offset(x, y))
             }
-            drawPath(path)
+            drawPath(path = path, color = Color.Cyan, style = Stroke(width = 3f))
         }
     }
 }
